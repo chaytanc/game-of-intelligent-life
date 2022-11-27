@@ -3,6 +3,8 @@ from torch import nn
 import torch
 from torch.autograd import Function
 from torch.autograd.grad_mode import F
+
+from Cell import Cell
 from Grid import Grid
 from Summary import Summary
 import math
@@ -22,7 +24,7 @@ class CellConv(nn.Module):
                 block_classs in the layer corresponding to its index
         '''
         super(CellConv, self).__init__()
-        self.inplanes = 64
+        self.inplanes = 64 #XXX todo this should be 3 bc rgb?? number of input channels has to match input tensor
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm2d(64),
@@ -35,7 +37,6 @@ class CellConv(nn.Module):
         # Todo make more robust by having game determine this hyperparm rather than relying on only using this architecture
         # XXX note need to apply some sort of fitness prediction normalization
         # XXX no fully connected b/c want grid output, not classes
-        # what is planes
         # what does batch norm do again: keeps track of mean and std dev for batch and normalizes inputs to layers
 
     def _make_block_layers(self, block_class, planes, num_block_classs, stride=1):
@@ -49,7 +50,7 @@ class CellConv(nn.Module):
             )
         layers = []  # A list of residual blocks
         layers.append(block_class(self.inplanes, planes, stride, downsample))
-        self.inplanes = planes  # XXX todo will all layers have same input size as output size?
+        self.inplanes = planes  # makes next layer input be the channels of the output
         for i in range(1, num_block_classs):
             layers.append(block_class(in_channels=self.inplanes,
                                       out_channels=planes))
@@ -70,7 +71,8 @@ class CellConv(nn.Module):
         # x = self.fc(x)
         return x
 
-    def train_module(self, cell, state, prev_state):
+    @staticmethod
+    def train_module(cell, state, prev_state):
         # Loss and optimizer XXX proabably move these more global
         num_epochs = 20
         batch_size = 16  # XXX todo ???
@@ -95,22 +97,55 @@ class CellConv(nn.Module):
             optimizer.step()
 
     def getNetworkParamVector(self):
-        # first_weights = np.array(self.layer0.parameters()).flatten()
-        # last_weights = np.array(self.layer3.parameters()).flatten()
-        first_params = self.layer0.parameters().__next__().detach().numpy().flatten()
-        last_params = self.layer3.parameters().__next__().detach().numpy().flatten()
-        # TODO make robust by trimming and padding in order to accommodate diff architectures
-        # todo layer0 is in fact a whole module of layers, not just one layer and I could try to account for that
-        network_param_vector = np.concatenate([first_params, last_params])
+        first_params = self.layer0.parameters().__next__().detach()
+        last_params = self.layer3.parameters().__next__().detach()
+        first, last = CellConv.firstLastParams(first_params, last_params)
+        first = first.detach().numpy().flatten()
+        last = last.detach().numpy().flatten()
+        network_param_vector = np.concatenate([first, last])
         return network_param_vector
+
+    @staticmethod
+    def getParams(layer):
+        size = 1
+        for dim in layer.shape:
+            size *= dim
+        return size
+
+    '''
+    Reduces the size of first and last layer params to smaller number of params by first reducing channel numbers w 
+    1-d convolutions, then simply truncating if that does not work... may need to choose one strat or the other
+    '''
+    @staticmethod
+    def firstLastParams(*args):
+        layers_params = []
+        for layer_params in args:
+            size = CellConv.getParams(layer_params)
+
+            last_out = 0
+            while size > 1500:
+                out = layer_params.shape[1] // 2 if layer_params.shape[1] // 2 != 0 else 1
+                if last_out == out:
+                    with torch.no_grad():
+                        dim0 = layer_params.shape[0] // 2
+                        layer_params = layer_params[:dim0, :layer_params.shape[1],
+                                       :layer_params.shape[2], :layer_params.shape[3]]
+                print("Fuck, size:", size)
+                # Reducing channel size until params are manageable
+                # m = torch.nn.MaxPool2d(kernel_size=3, stride=2)
+                conv = torch.nn.Conv2d(in_channels=layer_params.shape[1], out_channels=out, kernel_size=1)
+                layer_params = conv(layer_params)
+                size = CellConv.getParams(layer_params)
+                last_out = out
+
+            layers_params.append(layer_params)
+        return layers_params
 
     @staticmethod
     def sigmoid(x):
         sig = 1 / (1 + math.exp(-x))
         return sig
 
-    # XXX todo make color depend on params so that we can actually see something that differentiates the cells
-    # and move to cellconv
     def getNetworkColor(self):
         # sum of first layer weights, sum of last layer weights, sum of middle layer weights??
         first_params = self.layer0.parameters().__next__().detach().numpy()
@@ -124,7 +159,8 @@ class CellConv(nn.Module):
         return color
 
     '''
-    Encodes a model into an RGB value
+    Encodes a model architecture summary into an ascii numpy array
+    (not currently used)
     '''
 
     @staticmethod
@@ -156,10 +192,10 @@ class CellConv(nn.Module):
 
 def CA_Loss(y_pred, y):
     # XXX should be able to use autograd since y_pred was requires_grad
-    next_frame_pred = Grid.getColorChannels(y_pred)
-    target_frame = Grid.getColorChannels(y)
-    fit_preds = Grid.getFitnessChannels(y_pred)
-    fit_targets = Grid.getFitnessChannels(y)
+    next_frame_pred = Cell.getColorChannels(y_pred)
+    target_frame = Cell.getColorChannels(y)
+    fit_preds = Cell.getFitnessChannels(y_pred)
+    fit_targets = Cell.getFitnessChannels(y)
     frame_loss = F.binary_cross_entropy(next_frame_pred, target_frame)
     # frame_loss = F.mseloss(next_frame_pred, target_frame)
     fit_loss = F.mseloss(fit_preds, fit_targets)

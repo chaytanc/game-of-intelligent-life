@@ -19,13 +19,18 @@ class Cell():
             self.network_vec = np.zeros(network_param_size)
         self.fitness = np.array([fitness])
         self.neighbors_fit_predictions = []
+        self.previous_neighbors = np.array([[0.0, 0.0, 0.0] * 3])
+        self.x = 0
+        self.y = 0
         # self.ch_dim = channel_dim
 
+    '''
+    Represents the convnet cell as a numpy array, useful for storing in the CAGame().grid prop.
+    '''
     def vector(self) -> np.ndarray:
         vec = np.concatenate([self.color, self.network_vec, self.fitness])
         return vec
 
-    # TODO probably better as a prop of the cell not the grid?
     @staticmethod
     def getCellColor(x, y, grid):
         # select and return first three rgb channels
@@ -37,4 +42,5 @@ class Cell():
 
     @staticmethod
     def getCellNetwork(x, y, grid):
-        return grid.data[x, y][3:4]
+        return grid.data[x, y][3:-2]
+

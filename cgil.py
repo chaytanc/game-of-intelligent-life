@@ -27,50 +27,43 @@ CLOCK = pygame.time.Clock()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+'''Sets up the size constant of the channels that each cell in the grid will hold. We will have 3 for color, 
+some amount for representing the parameters of the conv net at that location, and some to represent the fitness of 
+the cell. '''
 # TODO Biochemical signaling channels?
 def setChannels(first_params, last_params):
-    network_params_size = ((first_params.numpy().flatten().size +
-                            last_params.numpy().flatten().size))
+    network_params_size = ((first_params.detach().numpy().flatten().size +
+                            last_params.detach().numpy().flatten().size))
+    # 3 channels for rgb, + network params size (times 9 neighbors??) + fitness channels
     CHANNELS = 3 + network_params_size + FIT_CHANNELS
     return CHANNELS
 
 
+'''
+This class continuously draws the grid on the pygame window according to cell update rules and dynamics
+'''
 class CAGame():
 
     def __init__(self):
         cell_net = CellConv(ResidualBlock, [3, 4, 6, 3]).to(device)
         first_params = cell_net.layer0.parameters().__next__().detach()
         last_params = cell_net.layer3.parameters().__next__().detach()
-        first_params, last_params = self.firstLastParams(first_params, last_params)
-        self.network_params_size = ((first_params.numpy().flatten().size +
-                                     last_params.numpy().flatten().size))
+        first_params, last_params = CellConv.firstLastParams(first_params, last_params)
+        self.network_params_size = ((first_params.detach().numpy().flatten().size +
+                                     last_params.detach().numpy().flatten().size))
         CHANNELS = setChannels(first_params, last_params)
 
         # Grid of Cell objects, corresponding with their vectorized forms stored below for computation
         self.cell_grid = [[Cell(self.network_params_size)] * GRID_W] * GRID_H
-        # Grid, holding vectorized cells in data
+        for r, row in enumerate(self.cell_grid):
+            for c, col in enumerate(row):
+                self.cell_grid[r][c].x = row
+                self.cell_grid[r][c].y = col
+        # Grid, holding vectorized cells in data used to actually get loss of cells
         self.grid = Grid(CELL_SIZE, grid_size=(GRID_W, GRID_H, CHANNELS), network_params_size=self.network_params_size)
         self.screen = pygame.display.set_mode(self.grid.res)
         self.isRunning = False
         pygame.display.set_caption("Cellular Automata", "CA")
-
-    def getParams(self, layer):
-        size = 1
-        for dim in layer.shape:
-            size *= dim
-        return size
-
-    def firstLastParams(self, *args):
-        layers = []
-        # todo max pool instead of truncate!!!
-        for layer in args:
-            size = self.getParams(layer)
-            while size > 1000:
-                m = torch.nn.MaxPool2d(kernel_size=3, stride=2)
-                layer = m(layer)
-                size = self.getParams(layer)
-            layers.append(layer)
-        return layers
 
     '''
     Enforces updating the corresponding grid data when the cell object changes
@@ -83,22 +76,26 @@ class CAGame():
         cell_net = CellConv(ResidualBlock, [3, 4, 6, 3]).to(device)
         color = [256, 0, 0]
         cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
-        self.updateCellGrid(cell, 0, 0)
+        self.updateCellGrid(cell, 5, 0)
 
     # do for every cell
-    def updateCell(self, node):
+    def updateCell(self, node: Cell, previous_grid):
         neighbors = []
-        # XXX how to get x y coords of cells
-        x = node.Xm
-        y = node.Ym
+        x = node.x
+        y = node.y
         # Get cell's neighbors XXX check that range works righ
         for nx in range(-1, 1):
             for ny in range(-1, 1):
                 if nx != 0 and ny != 0:
                     neighbors.append(self.grid.data[x + nx, y + ny])
-                    # XXX make numpy array of neighbor colors
+        # After we update the cell, update the previous neighbors to the current grid config
+        # node.network.
+        node.previous_neighbors = neighbors
+        self.updateCellGrid(node, x, y)
 
-        # feed neighbors colors as input array to conv net
+
+        # TODO
+        # feed neighbors vectors as input array to conv net
         # call forward on cell
         # output next colors and fitness preds of neighbors
         # update neighbors' fitness pred prop based on this cell's prediction
@@ -112,7 +109,8 @@ class CAGame():
     Modifies cell.fitness
     '''
 
-    def fitnessUpdate(cell, loss):
+    #TODO move to cell instead of here??
+    def fitnessUpdate(self, cell, loss):
         norm_fitness = np.sum(cell.neighbors_fit_predictions) / len(cell.neighbors_fit_predictions)
         inv_loss_fitness = 1 / loss  # XXX add time alive term
         cell.fitness = 0.5 * inv_loss_fitness + 0.5 * norm_fitness
@@ -130,8 +128,12 @@ class CAGame():
     # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
     # Free the memory used by the eaten cell and allocate new instance of replicated
     def eatCells(self):
+        #TODO
         pass
 
+    '''
+    Handle keyboard presses and other events
+    '''
     def eventHandler(self):
         # Handles events sent by the user
         for event in pygame.event.get():
@@ -171,8 +173,10 @@ class CAGame():
                         event.type == pygame.QUIT:
                     pygame.display.quit(), exit()
 
+    '''
+    Draw everything on the screen
+    '''
     def draw(self):
-        # draws everything onto the screen
 
         # draws cells onto the screen
         for x, row in enumerate(self.grid.data):
@@ -203,6 +207,9 @@ class CAGame():
             if self.isRunning:
                 pass
             # XXX todo finish updateCells func
+            # for cell_row in self.grid:
+            #     for cell in cell_row:
+
             # self.update()
 
             self.draw()
@@ -219,13 +226,12 @@ def main():
 if __name__ == '__main__':
     main()
 
-# hash network architecture and parameters to color
 # dimensions of environment: rgb hashed color / conv net associated with that pixel, fitness
 # Input to agents: neighbor's colors, 
 # get next frame based on which agents move where and which get eaten
 # get loss of each pixel based on predictions and on accuracy of judgment of neighbors' fitness functions
 # update fitness functions as summations of neighbors' predictions and own predictions
-# update frame, write to video
+# update frame
 # pygame while loop
 # channels=fitness, rgb of model architecture, environment constraints
 # dimensions: in = (neighborsw x neighborsh x channels), out = (gridw x gridh x channels + movement)
