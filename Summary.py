@@ -1,4 +1,8 @@
 
+'''
+Class to summarize the architecture of a network. Could be useful info for cellular automata to have??
+Not currently in use.
+'''
 class Summary:
     def __init__(self, model):
         self.depth = 0

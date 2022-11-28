@@ -3,6 +3,9 @@ from cellular_automaton import CellularAutomaton, MooreNeighborhood, CAWindow, E
 from typing import Sequence
 
 
+'''
+This is an example of a CA made with prebuilt libraries instead of pygame.
+'''
 class CA(CellularAutomaton):
 
     def __init__(self):
