@@ -25,7 +25,7 @@ class CellConv(nn.Module):
         :param output_shape: (grid_h, grid_w, channels) of the shape of the output
         '''
         super(CellConv, self).__init__()
-        self.inplanes = 64 #XXX todo this should be 3 bc rgb?? number of input channels has to match input tensor
+        self.inplanes = 64 #todo this should match number of input channels of input tensor
         self.output_shape = output_shape
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
@@ -37,9 +37,10 @@ class CellConv(nn.Module):
         self.layer2 = self._make_block_layers(block_class, 256, layers[2], stride=2)
         self.layer3 = self._make_block_layers(block_class, 512, layers[3], stride=2)
         #XXX working here to shape output into grid format
-        # self.layer4 = nn.Conv2d(512, out_channels=output_shape[2])
+        # Get channel number to be output expected
+        self.layer4 = nn.Conv2d(512, out_channels=output_shape[2], kernel_size=3, stride=1)
         # Todo make more robust by having game determine this hyperparm rather than relying on only using this architecture
-        # XXX note need to apply some sort of fitness prediction normalization
+        # todo need to apply some sort of fitness prediction normalization
         # XXX no fully connected b/c want grid output, not classes
         # what does batch norm do again: keeps track of mean and std dev for batch and normalizes inputs to layers
 
@@ -69,6 +70,9 @@ class CellConv(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.avgpool(x)
+
+        # Get channels to match, then upsample to get desired h, w dims
+        x = self.layer4(x)
         # Adding upsampling to get output of convnet into grid shape, since stride > 1 downsampled
         # Note: similar to autoencoder
         # Compare (n, c, h, w) to (h, w, c) provided
@@ -163,7 +167,6 @@ class CellConv(nn.Module):
     '''
     Encodes a model into an RGB value
     '''
-
     @staticmethod
     def architectureToRGB(model: nn.Module, input_size=None):
         # project 1d array ascii model into 3 numbers --> this has a nonzero nullspace...
