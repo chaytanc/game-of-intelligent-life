@@ -52,6 +52,8 @@ class CAGame():
         self.network_params_size = ((first_params.detach().numpy().flatten().size +
                                      last_params.detach().numpy().flatten().size))
         CHANNELS = setChannels(first_params, last_params)
+        OUTPUT_SHAPE = (GRID_H, GRID_W, CHANNELS)
+        cell_net.output_shape = OUTPUT_SHAPE
 
         # Grid of Cell objects, corresponding with their vectorized forms stored below for computation
         self.cell_grid = [[Cell(self.network_params_size)] * GRID_W] * GRID_H
@@ -79,7 +81,7 @@ class CAGame():
         self.updateCellGrid(cell, 5, 0)
 
     # do for every cell
-    def updateCell(self, node: Cell, previous_grid):
+    def updateCell(self, node: Cell, previous_grid=None):
         neighbors = []
         x = node.x
         y = node.y
@@ -88,32 +90,25 @@ class CAGame():
             for ny in range(-1, 1):
                 if nx != 0 and ny != 0:
                     neighbors.append(self.grid.data[x + nx, y + ny])
+        node.last_neighbors = neighbors
         # After we update the cell, update the previous neighbors to the current grid config
         # node.network.
-        node.previous_neighbors = neighbors
+        # TODO move to function
+        # Remove the network params from the grid state
+        full_state = np.concatenate(self.grid[:,:, 3], self.grid[:, :, -2:-1])
+        CellConv.train_module(node, full_state=full_state, prev_state=previous_grid)
         self.updateCellGrid(node, x, y)
 
-
-        # TODO
         # feed neighbors vectors as input array to conv net
-        # call forward on cell
+        # train calls forward on cell
         # output next colors and fitness preds of neighbors
         # update neighbors' fitness pred prop based on this cell's prediction
         # concatenate into state prediction
-        # take movement, maybe get eaten
-        # new cell location assume color of predicted form
+        # take movement, maybe get eaten #todo
+        # update cell colors after movements and weight changes
         # compare prediction to actual s' after movement to get loss
         # update cell weights
 
-    '''
-    Modifies cell.fitness
-    '''
-
-    #TODO move to cell instead of here??
-    def fitnessUpdate(self, cell, loss):
-        norm_fitness = np.sum(cell.neighbors_fit_predictions) / len(cell.neighbors_fit_predictions)
-        inv_loss_fitness = 1 / loss  # XXX add time alive term
-        cell.fitness = 0.5 * inv_loss_fitness + 0.5 * norm_fitness
 
     def writeFrame(self):
         # randomly sample grid to call updates on

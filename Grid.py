@@ -1,7 +1,6 @@
 from numpy import full
 from Cell import Cell
 
-
 class Grid():
 
     def __init__(self, cell_size, grid_size, network_params_size):
@@ -11,3 +10,11 @@ class Grid():
         self.res = (grid_size[0] * cell_size, grid_size[1] * cell_size)
         # Inits data with black cells by default, no network is configured
         self.data = full(self.size, Cell(network_params_size).vector())
+
+    @staticmethod
+    def getColorChannels(data):
+        return data[:, :, :3]
+
+    @staticmethod
+    def getFitnessChannels(data):
+        return data[:, :, -2:-1]

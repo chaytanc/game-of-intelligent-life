@@ -16,15 +16,17 @@ class CellConv(nn.Module):
     https://blog.paperspace.com/writing-resnet-from-scratch-in-pytorch/
     '''
 
-    def __init__(self, block_class, layers):
+    def __init__(self, block_class, layers, output_shape=(100, 100, 100)):
         '''
 
         :param block_class: ResidualBlock class to use to make layer modules
         :param layers: List of length 4 where each ind is the number of residual
                 block_classs in the layer corresponding to its index
+        :param output_shape: (grid_h, grid_w, channels) of the shape of the output
         '''
         super(CellConv, self).__init__()
         self.inplanes = 64 #XXX todo this should be 3 bc rgb?? number of input channels has to match input tensor
+        self.output_shape = output_shape
         self.conv1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
             nn.BatchNorm2d(64),
@@ -34,6 +36,8 @@ class CellConv(nn.Module):
         self.layer1 = self._make_block_layers(block_class, 128, layers[1], stride=2)
         self.layer2 = self._make_block_layers(block_class, 256, layers[2], stride=2)
         self.layer3 = self._make_block_layers(block_class, 512, layers[3], stride=2)
+        #XXX working here to shape output into grid format
+        # self.layer4 = nn.Conv2d(512, out_channels=output_shape[2])
         # Todo make more robust by having game determine this hyperparm rather than relying on only using this architecture
         # XXX note need to apply some sort of fitness prediction normalization
         # XXX no fully connected b/c want grid output, not classes
@@ -64,38 +68,25 @@ class CellConv(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-
         x = self.avgpool(x)
-        x = x.view(x.size(0),
-                   -1)  # XXX dunno if this is desirable, what shape do we want output? We want same np.size, 3-d structure as state
+        # Adding upsampling to get output of convnet into grid shape, since stride > 1 downsampled
+        # Note: similar to autoencoder
+        # Compare (n, c, h, w) to (h, w, c) provided
+        desired_w = self.output_shape[1]
+        desired_h = self.output_shape[0]
+        if x.shape[3] < desired_w or x.shape[2] < desired_h:
+            output_shape = (x.shape[0], x.shape[1], desired_h, desired_w)
+            up = nn.Upsample(output_shape) #TODO can play around with method of upsampling ie mode=...
+            x = up(x)
+
+        # XXX dunno if this is desirable, what shape do we want output? We want same np.size, 3-d structure as state
+        # x = x.view(x.size(0), -1)
         # x = self.fc(x)
         return x
 
-    @staticmethod
-    def train_module(cell, state, prev_state):
-        # Loss and optimizer XXX proabably move these more global
-        num_epochs = 20
-        batch_size = 16  # XXX todo ???
-        learning_rate = 0.01
-        # criterion = CA_Loss()
-        net = cell.network
-        optimizer = torch.optim.SGD(
-            net.parameters(),
-            lr=learning_rate,
-            weight_decay=0.001,
-            momentum=0.9)
-        for epoch in range(num_epochs):
-            # Note: no inner for loop here because only doing one frame pred
-            # at a time
-            # Make a prediction on the previous state and verify if it matches current state
-            # XXX --> will have to bootstrap at the start / just run one iteration without training??
-            prev_state_pred = net(prev_state)
-            # loss = criterion()
-            loss = CA_Loss(prev_state_pred, state)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
+    '''
+    Represent the first and last layers of the network as flattened numpy arrays of those parameters, concatenated
+    '''
     def getNetworkParamVector(self):
         first_params = self.layer0.parameters().__next__().detach()
         last_params = self.layer3.parameters().__next__().detach()
@@ -122,6 +113,8 @@ class CellConv(nn.Module):
         for layer_params in args:
             size = CellConv.getParams(layer_params)
 
+            # Reducing channel size until params are manageable. If flattening channels to 1 ch isn't enough,
+            # reduce samples in batch by half until under 1500
             last_out = 0
             while size > 1500:
                 out = layer_params.shape[1] // 2 if layer_params.shape[1] // 2 != 0 else 1
@@ -130,9 +123,6 @@ class CellConv(nn.Module):
                         dim0 = layer_params.shape[0] // 2
                         layer_params = layer_params[:dim0, :layer_params.shape[1],
                                        :layer_params.shape[2], :layer_params.shape[3]]
-                print("Fuck, size:", size)
-                # Reducing channel size until params are manageable
-                # m = torch.nn.MaxPool2d(kernel_size=3, stride=2)
                 conv = torch.nn.Conv2d(in_channels=layer_params.shape[1], out_channels=out, kernel_size=1)
                 layer_params = conv(layer_params)
                 size = CellConv.getParams(layer_params)
@@ -183,19 +173,54 @@ class CellConv(nn.Module):
         return rgb_channel
 
     '''
-    Decodes an RGB value into a model architecture
+    Convert from (n, c, h, w) format of network output to (h, w, c) format of the grid
     '''
-    # @staticmethod
-    # def RGBtoArchitecture(model: nn.Module):
-    #     pass
+    @staticmethod
+    def reshape_output(output: torch.Tensor, output_shape):
+        output = torch.squeeze(output)
+        output = torch.reshape(output, output_shape)
+        return output
 
+    ''' 
+    Can switch between passing in full previous state or only partially observable prev state / neighbors
+    '''
+    @staticmethod
+    def train_module(cell, full_state, prev_state=None):
+        # Loss and optimizer XXX proabably move these more global
+        num_epochs = 2
+        batch_size = 16  # XXX todo ???
+        learning_rate = 0.01
+        # criterion = CA_Loss()
+        net = cell.network
+        #TODO hyperparam tuning
+        optimizer = torch.optim.SGD(
+            net.parameters(),
+            lr=learning_rate,
+            weight_decay=0.001, #TODO Check weight decay params
+            momentum=0.9)
+        for epoch in range(num_epochs):
+            # Note: no inner for loop here because only doing one frame pred
+            # at a time
+            # Make a prediction on the previous state and verify if it matches current state
+            # XXX --> will have to bootstrap at the start / just run one iteration without training??
+            next_full_state_pred = net(cell.last_neighbors)
+            next_full_state_pred = CellConv.reshape_output(next_full_state_pred, full_state.shape)
+            # loss = criterion()
+            loss = CA_Loss(next_full_state_pred, full_state)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        cell.updateColor()
 
+'''
+Computes the loss of a cell based on the predicted state of the whole grid (color and fitness) vs actual
+'''
 def CA_Loss(y_pred, y):
     # XXX should be able to use autograd since y_pred was requires_grad
-    next_frame_pred = Cell.getColorChannels(y_pred)
-    target_frame = Cell.getColorChannels(y)
-    fit_preds = Cell.getFitnessChannels(y_pred)
-    fit_targets = Cell.getFitnessChannels(y)
+    next_frame_pred = Grid.getColorChannels(y_pred)
+    target_frame = Grid.getColorChannels(y)
+    fit_preds = Grid.getFitnessChannels(y_pred)
+    fit_targets = Grid.getFitnessChannels(y)
     frame_loss = F.binary_cross_entropy(next_frame_pred, target_frame)
     # frame_loss = F.mseloss(next_frame_pred, target_frame)
     fit_loss = F.mseloss(fit_preds, fit_targets)

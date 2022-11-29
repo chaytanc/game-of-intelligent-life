@@ -19,7 +19,7 @@ class Cell():
             self.network_vec = np.zeros(network_param_size)
         self.fitness = np.array([fitness])
         self.neighbors_fit_predictions = []
-        self.previous_neighbors = np.array([[0.0, 0.0, 0.0] * 3])
+        self.last_neighbors = np.array([[0.0, 0.0, 0.0] * 3])
         self.x = 0
         self.y = 0
         # self.ch_dim = channel_dim
@@ -30,6 +30,20 @@ class Cell():
     def vector(self) -> np.ndarray:
         vec = np.concatenate([self.color, self.network_vec, self.fitness])
         return vec
+
+    def updateColor(self):
+        self.color = self.network.getNetworkColor()
+
+
+    #todo may need to normalize the loss somehow such that the fitness value is numerically stable
+    '''
+    Updates the cell's fitness according to the accuracy of its predictions and how fit its neighbors predict it to be
+    '''
+    def updateFitness(self, loss):
+        # Social fitness term normalizes over the predictions the neighbors of this cell estimated its fitness to be
+        social_fitness = np.sum(self.neighbors_fit_predictions) / len(self.neighbors_fit_predictions)
+        inv_loss_fitness = 1 / loss  # XXX add time alive term
+        self.fitness = 0.5 * inv_loss_fitness + 0.5 * social_fitness
 
     @staticmethod
     def getCellColor(x, y, grid):
