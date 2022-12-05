@@ -80,23 +80,29 @@ class CAGame():
         cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
         self.updateCellGrid(cell, 5, 0)
 
-    # do for every cell
+    # do for every cell, add neighbors' fitness predictions to cell as we go
+    # update each cell's fitness at end of running all training of cells in grid
+    #todo do the channels of the grid also get updated??
     def updateCell(self, node: Cell, previous_grid=None):
+        vector_neighbors = []
         neighbors = []
         x = node.x
         y = node.y
-        # Get cell's neighbors XXX check that range works righ
+        # Get cell's neighbors todo check that this works righ
         for nx in range(-1, 1):
             for ny in range(-1, 1):
                 if nx != 0 and ny != 0:
-                    neighbors.append(self.grid.data[x + nx, y + ny])
-        node.last_neighbors = neighbors
+                    vector_neighbors.append(self.grid.data[x + nx, y + ny])
+                    neighbor = self.cell_grid[x + nx][y + ny]
+                    neighbors.append(neighbor)
+        node.last_neighbors = vector_neighbors
         # After we update the cell, update the previous neighbors to the current grid config
         # node.network.
-        # TODO move to function
+        #TODO move getting full state to function
         # Remove the network params from the grid state
         full_state = np.concatenate(self.grid[:,:, 3], self.grid[:, :, -2:-1])
-        CellConv.train_module(node, full_state=full_state, prev_state=previous_grid)
+        pred = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid)
+
         self.updateCellGrid(node, x, y)
 
         # feed neighbors vectors as input array to conv net
@@ -203,9 +209,11 @@ class CAGame():
                 pass
             # XXX todo finish updateCells func
             # for cell_row in self.grid:
-            #     for cell in cell_row:
+                # for cell in cell_row:
 
-            # self.update()
+            for row in self.cell_grid:
+                for cell in row:
+                    self.updateCell(cell)
 
             self.draw()
             self.eventHandler()

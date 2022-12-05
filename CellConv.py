@@ -201,11 +201,12 @@ class CellConv(nn.Module):
             lr=learning_rate,
             weight_decay=0.001, #TODO Check weight decay params
             momentum=0.9)
+        loss = 1000  # defaults to big
         for epoch in range(num_epochs):
             # Note: no inner for loop here because only doing one frame pred
             # at a time
             # Make a prediction on the previous state and verify if it matches current state
-            # XXX --> will have to bootstrap at the start / just run one iteration without training??
+            # feed neighbors for cell and ask for full grid predictions
             next_full_state_pred = net(cell.last_neighbors)
             next_full_state_pred = CellConv.reshape_output(next_full_state_pred, full_state.shape)
             # loss = criterion()
@@ -214,6 +215,7 @@ class CellConv(nn.Module):
             loss.backward()
             optimizer.step()
         cell.updateColor()
+        return next_full_state_pred
 
 '''
 Computes the loss of a cell based on the predicted state of the whole grid (color and fitness) vs actual
