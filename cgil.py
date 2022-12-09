@@ -16,6 +16,7 @@ from Grid import Grid
 from ResidualBlock import ResidualBlock
 
 # Constants
+OBSERVABILITY = 'partial'
 CELL_SIZE = 10  # pixels
 GRID_W = 100  # cells
 GRID_H = 100  # cells
@@ -30,7 +31,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 '''Sets up the size constant of the channels that each cell in the grid will hold. We will have 3 for color, 
 some amount for representing the parameters of the conv net at that location, and some to represent the fitness of 
 the cell. '''
-# TODO Biochemical signaling channels?
+# TODO Biochemical signaling channels? movement channel
 def setChannels(first_params, last_params):
     network_params_size = ((first_params.detach().numpy().flatten().size +
                             last_params.detach().numpy().flatten().size))
@@ -45,7 +46,7 @@ This class continuously draws the grid on the pygame window according to cell up
 class CAGame():
 
     def __init__(self):
-        cell_net = CellConv(ResidualBlock, [3, 4, 6, 3]).to(device)
+        cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
         first_params = cell_net.layer0.parameters().__next__().detach()
         last_params = cell_net.layer3.parameters().__next__().detach()
         first_params, last_params = CellConv.firstLastParams(first_params, last_params)
@@ -56,11 +57,20 @@ class CAGame():
         cell_net.output_shape = OUTPUT_SHAPE
 
         # Grid of Cell objects, corresponding with their vectorized forms stored below for computation
-        self.cell_grid = [[Cell(self.network_params_size)] * GRID_W] * GRID_H
-        for r, row in enumerate(self.cell_grid):
-            for c, col in enumerate(row):
-                self.cell_grid[r][c].x = row
-                self.cell_grid[r][c].y = col
+        # self.cell_grid = [[Cell(self.network_params_size)] * GRID_W] * GRID_H
+        # self.cell_grid = [[0] * GRID_W] * GRID_H
+        self.cell_grid = [[0]*GRID_W for _ in range(GRID_H)]
+        for r in range(GRID_H):
+            for c in range(GRID_W):
+                new_cell = Cell(self.network_params_size)
+                new_cell.x = r
+                new_cell.y = c
+                self.cell_grid[r][c] = new_cell
+        # for r, row in enumerate(self.cell_grid):
+        #     for c, col in enumerate(row):
+        #         self.cell_grid[r][c].x = row
+        #         self.cell_grid[r][c].y = col
+
         # Grid, holding vectorized cells in data used to actually get loss of cells
         self.grid = Grid(CELL_SIZE, grid_size=(GRID_W, GRID_H, CHANNELS), network_params_size=self.network_params_size)
         self.screen = pygame.display.set_mode(self.grid.res)
@@ -75,7 +85,7 @@ class CAGame():
         self.grid.data[x][y] = cell.vector()
 
     def testCellConv(self):
-        cell_net = CellConv(ResidualBlock, [3, 4, 6, 3]).to(device)
+        cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
         color = [256, 0, 0]
         cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
         self.updateCellGrid(cell, 5, 0)
@@ -88,19 +98,24 @@ class CAGame():
         neighbors = []
         x = node.x
         y = node.y
-        # Get cell's neighbors todo check that this works righ
-        for nx in range(-1, 1):
-            for ny in range(-1, 1):
-                if nx != 0 and ny != 0:
-                    vector_neighbors.append(self.grid.data[x + nx, y + ny])
-                    neighbor = self.cell_grid[x + nx][y + ny]
-                    neighbors.append(neighbor)
+        # Get cell's neighbors, 3x3
+        for nx in range(-1, 2):
+            vector_row = []
+            for ny in range(-1, 2):
+                # if not (nx == 0 and ny == 0):
+                # vector_neighbors.append(self.grid.data[x + nx, y + ny])
+                vector_row.append(self.grid.data[x + nx, y + ny])
+                neighbor = self.cell_grid[x + nx][y + ny]
+                neighbors.append(neighbor)
+            vector_neighbors.append(vector_row)
+                # else:
+                #     neighbors.append()
+        vector_neighbors = np.array(vector_neighbors)
         node.last_neighbors = vector_neighbors
         # After we update the cell, update the previous neighbors to the current grid config
-        # node.network.
         #TODO move getting full state to function
         # Remove the network params from the grid state
-        full_state = np.concatenate(self.grid[:,:, 3], self.grid[:, :, -2:-1])
+        full_state = np.dstack((self.grid.data[:,:, 3:4], self.grid.data[:, :, -2:-1]))
         pred = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid)
 
         self.updateCellGrid(node, x, y)
@@ -208,12 +223,10 @@ class CAGame():
             if self.isRunning:
                 pass
             # XXX todo finish updateCells func
-            # for cell_row in self.grid:
-                # for cell in cell_row:
-
             for row in self.cell_grid:
                 for cell in row:
-                    self.updateCell(cell)
+                    if cell.network:
+                        self.updateCell(cell)
 
             self.draw()
             self.eventHandler()
@@ -238,29 +251,3 @@ if __name__ == '__main__':
 # pygame while loop
 # channels=fitness, rgb of model architecture, environment constraints
 # dimensions: in = (neighborsw x neighborsh x channels), out = (gridw x gridh x channels + movement)
-
-# draw on grid example with video writer thing
-# '''
-# with VideoWriter('teaser.mp4') as vid:
-#     x = np.zeros([len(EMOJI), 64, 64, CHANNEL_N], np.float32)
-#     # grow
-#     for i in tqdm.trange(200):
-#         k = i // 20
-#         if i % 20 == 0 and k < len(EMOJI):
-#             x[k, 32, 32, 3:] = 1.0
-#         vid.add(zoom(tile2d(to_rgb(x), 5), 2))
-#         for ca, xk in zip(models, x):
-#             xk[:] = ca(xk[None, ...])[0]
-# mvp.ipython_display('teaser.mp4', loop=True)
-# # update grid during training
-# with VideoWriter(out_fn) as vid:
-#     for i in tqdm.trange(500):
-#         vis = np.hstack(to_rgb(x))
-#         vid.add(zoom(vis, 2))
-#         for ca, xk in zip(models, x):
-#             xk[:] = ca(xk[None, ...])[0]
-# # @title Training Progress (Batches)
-# frames = sorted(glob.glob('train_log/batches_*.jpg'))
-# mvp.ImageSequenceClip(frames, fps=10.0).write_videofile('batches.mp4')
-# mvp.ipython_display('batches.mp4')
-# '''

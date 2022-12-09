@@ -3,8 +3,8 @@ from torch import nn
 import torch
 from torch.autograd import Function
 from torch.autograd.grad_mode import F
+from tqdm import tqdm
 
-from Cell import Cell
 from Grid import Grid
 from Summary import Summary
 import math
@@ -16,28 +16,36 @@ class CellConv(nn.Module):
     https://blog.paperspace.com/writing-resnet-from-scratch-in-pytorch/
     '''
 
-    def __init__(self, block_class, layers, output_shape=(100, 100, 100)):
+    def __init__(self, block_class, layers, output_shape=(100, 100, 100), observability='partial'):
         '''
 
         :param block_class: ResidualBlock class to use to make layer modules
         :param layers: List of length 4 where each ind is the number of residual
                 block_classs in the layer corresponding to its index
         :param output_shape: (grid_h, grid_w, channels) of the shape of the output
+        :param observability: If partial, cell only receives input from neighbors when predicting next frame
         '''
         super(CellConv, self).__init__()
         self.inplanes = 64 #todo this should match number of input channels of input tensor
         self.output_shape = output_shape
+        max_pool_k = 3
+        if observability == 'partial':
+            kernel_size = 3
+            padding = 1
+        else:
+            kernel_size = 7
+            padding = 3
         self.conv1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
+            nn.Conv2d(3, 64, kernel_size=kernel_size, stride=2, padding=padding),
             nn.BatchNorm2d(64),
             nn.ReLU())
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.maxpool = nn.MaxPool2d(kernel_size=max_pool_k, stride=2, padding=1)
         self.layer0 = self._make_block_layers(block_class, 64, layers[0], stride=1)
         self.layer1 = self._make_block_layers(block_class, 128, layers[1], stride=2)
         self.layer2 = self._make_block_layers(block_class, 256, layers[2], stride=2)
         self.layer3 = self._make_block_layers(block_class, 512, layers[3], stride=2)
-        #XXX working here to shape output into grid format
-        # Get channel number to be output expected
+        self.avgpool = nn.AvgPool2d(7, stride=1)
+        # Get channel number to be output expected, grid number of channels
         self.layer4 = nn.Conv2d(512, out_channels=output_shape[2], kernel_size=3, stride=1)
         # Todo make more robust by having game determine this hyperparm rather than relying on only using this architecture
         # todo need to apply some sort of fitness prediction normalization
@@ -69,7 +77,7 @@ class CellConv(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.avgpool(x)
+        # x = self.avgpool(x)
 
         # Get channels to match, then upsample to get desired h, w dims
         x = self.layer4(x)
@@ -191,7 +199,7 @@ class CellConv(nn.Module):
     def train_module(cell, full_state, prev_state=None):
         # Loss and optimizer XXX proabably move these more global
         num_epochs = 2
-        batch_size = 16  # XXX todo ???
+        # batch_size = 16  # XXX todo ???
         learning_rate = 0.01
         # criterion = CA_Loss()
         net = cell.network
@@ -202,12 +210,15 @@ class CellConv(nn.Module):
             weight_decay=0.001, #TODO Check weight decay params
             momentum=0.9)
         loss = 1000  # defaults to big
-        for epoch in range(num_epochs):
+        for epoch in tqdm(range(num_epochs)):
             # Note: no inner for loop here because only doing one frame pred
             # at a time
             # Make a prediction on the previous state and verify if it matches current state
             # feed neighbors for cell and ask for full grid predictions
-            next_full_state_pred = net(cell.last_neighbors)
+            net = net.double()
+            input = torch.tensor(cell.last_neighbors)
+            input = input[None, :, :, :]
+            next_full_state_pred = net(input)
             next_full_state_pred = CellConv.reshape_output(next_full_state_pred, full_state.shape)
             # loss = criterion()
             loss = CA_Loss(next_full_state_pred, full_state)
