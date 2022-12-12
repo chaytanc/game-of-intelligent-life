@@ -112,12 +112,11 @@ class CAGame():
         # vector_neighbors = np.array(vector_neighbors)
         node.last_neighbors = vector_neighbors
         # After we update the cell, update the previous neighbors to the current grid config
-        #TODO move getting full state to function
-        # Remove the network params from the grid state
+        # Removes the network params from the grid state
         full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
         # pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
         pred, loss = CellConvSimple.train_module(node, full_state=full_state, num_epochs=NUM_EPOCHS)
-
+        # todo update cell.fitness property based on loss
         self.updateCellGrid(node, x, y)
 
         return loss
@@ -225,6 +224,7 @@ class CAGame():
         iterations = 2
         i = 0
         losses = []
+        # min
         while i < iterations:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
             self.testCellConv()

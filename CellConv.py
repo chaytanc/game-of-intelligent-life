@@ -171,6 +171,9 @@ class CellConv(nn.Module):
                  self.sigmoid(np.average(last_params)),
                  self.sigmoid(np.average(middle_params0))]
         color = np.array(color) * 256
+        # Approximates the range max - min of color values
+        normalization_factor = 10
+        color = color / normalization_factor
         return color
 
     '''

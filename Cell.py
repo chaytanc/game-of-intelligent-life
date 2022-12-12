@@ -40,10 +40,12 @@ class Cell():
     Updates the cell's fitness according to the accuracy of its predictions and how fit its neighbors predict it to be
     '''
     def updateFitness(self, loss):
+        # todo call this somewhere
         # Social fitness term normalizes over the predictions the neighbors of this cell estimated its fitness to be
-        social_fitness = np.sum(self.neighbors_fit_predictions) / len(self.neighbors_fit_predictions)
+        # social_fitness = np.sum(self.neighbors_fit_predictions) / len(self.neighbors_fit_predictions)
         inv_loss_fitness = 1 / loss  # XXX add time alive term
-        self.fitness = 0.5 * inv_loss_fitness + 0.5 * social_fitness
+        # self.fitness = 0.5 * inv_loss_fitness + 0.5 * social_fitness
+        self.fitness = inv_loss_fitness
 
     @staticmethod
     def getCellColor(x, y, grid):
