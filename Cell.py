@@ -19,7 +19,7 @@ class Cell():
             self.network_vec = np.zeros(network_param_size)
         self.fitness = np.array([fitness])
         self.neighbors_fit_predictions = []
-        self.last_neighbors = np.array([[0.0, 0.0, 0.0] * 3])
+        self.last_neighbors = np.array([[0.0, 0.0, 0.0, 0.0] * 9])
         self.x = 0
         self.y = 0
         # self.ch_dim = channel_dim
