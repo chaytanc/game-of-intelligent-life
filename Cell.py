@@ -20,6 +20,8 @@ class Cell():
         self.fitness = np.array([fitness])
         self.neighbors_fit_predictions = []
         self.last_neighbors = np.array([[0.0, 0.0, 0.0, 0.0] * 9])
+        # default do nothing
+        self.move = np.array([1, 0, 0, 0, 0])
         self.x = 0
         self.y = 0
         # self.ch_dim = channel_dim
@@ -28,7 +30,7 @@ class Cell():
     Represents the convnet cell as a numpy array, useful for storing in the CAGame().grid prop.
     '''
     def vector(self) -> np.ndarray:
-        vec = np.concatenate([self.color, self.network_vec, self.fitness])
+        vec = np.concatenate([self.color, self.network_vec, self.move, self.fitness])
         return vec
 
     def updateColor(self):

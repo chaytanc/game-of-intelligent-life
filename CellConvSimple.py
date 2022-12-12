@@ -169,6 +169,7 @@ class CellConvSimple(nn.Module):
             partial_pred_shape = (3, 3, 4)
             # next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
             next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, partial_pred_shape)
+            # TODO: get next frame
             loss = partial_CA_Loss(next_full_state_pred, full_state, cell.x, cell.y)
             # print('pred: ', next_full_state_pred)
             optimizer.zero_grad()
@@ -202,8 +203,8 @@ def partial_CA_Loss(pred, actual, x, y):
     fit_preds = Grid.getPartialFitnessChannels(pred, x, y)
     fit_targets = Grid.getPartialFitnessChannels(actual, x, y)
     with torch.enable_grad():
-        frame_loss = F.mse_loss(next_frame_pred, torch.from_numpy(target_frame))
-        fit_loss = F.mse_loss(fit_preds, torch.from_numpy(fit_targets))
+        frame_loss = F.mse_loss(next_frame_pred, target_frame)
+        fit_loss = F.mse_loss(fit_preds, fit_targets)
         losses = torch.tensor([frame_loss, fit_loss])
         norm_loss = torch.sum(losses) / len(losses)
     return norm_loss.requires_grad_()
