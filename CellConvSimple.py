@@ -1,12 +1,9 @@
 import numpy as np
 from torch import nn
 import torch
-from torch.autograd import Function
-from torch.autograd.grad_mode import F
 from tqdm import tqdm
-
+import torch.nn.functional as F
 from Grid import Grid
-from Summary import Summary
 import math
 
 
@@ -26,16 +23,14 @@ class CellConvSimple(nn.Module):
         '''
         super(CellConvSimple, self).__init__()
         self.output_shape = output_shape
-        if observability == 'partial':
-            kernel_size = 3
-            padding = 1
-        else:
-            kernel_size = 7
-            padding = 3
 
-        self.layer0 = nn.Conv2d(1, 128, 3, stride=1, padding=1)
-        self.layer1 = nn.Conv2d(128, 256, 3, stride=1, padding=1)
-        self.layer2 = nn.Conv2d(256, 512, 3, stride=1, padding=1)
+        self.layer0 = nn.Conv2d(4, 64, 3, stride=1, padding=1)
+        self.layer1 = nn.Conv2d(64, 128, 3, stride=1, padding=1)
+        self.layer2 = nn.Conv2d(128, 256, 3, stride=1, padding=1)
+        self.layer3 = nn.Conv2d(256, 512, 3, stride=1, padding=1)
+        self.layer4 = nn.Conv2d(512, 256, 3, stride=1, padding=1)
+        self.layer5 = nn.Conv2d(256, 128, 3, stride=1, padding=1)
+        self.layer6 = nn.Conv2d(128, 4, 3, stride=1, padding=1)
         self.encoder = nn.Sequential(
             self.layer0,
             nn.ReLU(True),
@@ -43,12 +38,22 @@ class CellConvSimple(nn.Module):
             nn.ReLU(True),
             self.layer2,
             nn.ReLU(True),
+            self.layer3,
+            nn.ReLU(True),
+            # Layers 4-6 for partial predictions
+            self.layer4,
+            nn.ReLU(True),
+            self.layer5,
+            nn.ReLU(True),
+            self.layer6,
+            nn.ReLU(True),
         )
         self.up1 = nn.ConvTranspose2d(512, 128, stride=2, kernel_size=3)  # (1, 128, 7, 7)
         self.up2 = nn.ConvTranspose2d(128, 32, stride=3, kernel_size=5)  # (1, 32, 23, 23)
         self.up3 = nn.ConvTranspose2d(32, 8, stride=3, kernel_size=5)  # (1, 8, 71, 71)
         self.up4 = nn.ConvTranspose2d(8, 4, stride=2, kernel_size=2, padding=21)  # (1, 4, 100, 100)
         self.lrelu = nn.LeakyReLU()
+        self.tanh = nn.Tanh()
 
     def deconvolve(self, x):
         x = self.up1(x)
@@ -58,12 +63,12 @@ class CellConvSimple(nn.Module):
         x = self.up3(x)
         x = self.lrelu(x)
         x = self.up4(x)
-        x = self.lrelu(x)
+        x = self.tanh(x)
         return x
 
     def forward(self, x):
         x = self.encoder(x)
-        x = self.deconvolve(x)
+        # x = self.deconvolve(x) # No deconvolve for partial observability
         return x
 
     '''
@@ -123,7 +128,7 @@ class CellConvSimple(nn.Module):
         # sum of first layer weights, sum of last layer weights, sum of middle layer weights??
         first_params = self.layer0.parameters().__next__().detach().numpy()
         middle_params = self.layer1.parameters().__next__().detach().numpy()
-        last_params = self.layer2.parameters().__next__().detach().numpy()
+        last_params = self.layer3.parameters().__next__().detach().numpy()
         color = [self.sigmoid(np.average(first_params[:5])),
                  self.sigmoid(np.average(last_params[:5])),
                  self.sigmoid(np.average(middle_params[:5]))]
@@ -142,6 +147,7 @@ class CellConvSimple(nn.Module):
     ''' 
     Can switch between passing in full previous state or only partially observable prev state / neighbors
     '''
+    @staticmethod
     def train_module(cell, full_state, prev_state=None, num_epochs=5):
         learning_rate = 0.01
         net = cell.network
@@ -159,10 +165,11 @@ class CellConvSimple(nn.Module):
             input = torch.from_numpy(cell.last_neighbors.astype(np.double))
             input = input[None, :, :, :]
             input = input.float().requires_grad_()
-            input.retain_grad()
             next_full_state_pred = net(input)
-            next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
-            loss = CA_Loss(next_full_state_pred, full_state)
+            partial_pred_shape = (3, 3, 4)
+            # next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
+            next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, partial_pred_shape)
+            loss = partial_CA_Loss(next_full_state_pred, full_state, cell.x, cell.y)
             # print('pred: ', next_full_state_pred)
             optimizer.zero_grad()
             loss.backward()
@@ -181,7 +188,21 @@ def CA_Loss(y_pred, y):
     fit_targets = Grid.getFitnessChannels(y)
     with torch.enable_grad():
         frame_loss = F.mse_loss(next_frame_pred, torch.from_numpy(target_frame))
-        # frame_loss = F.mseloss(next_frame_pred, target_frame)
+        fit_loss = F.mse_loss(fit_preds, torch.from_numpy(fit_targets))
+        losses = torch.tensor([frame_loss, fit_loss])
+        norm_loss = torch.sum(losses) / len(losses)
+    return norm_loss.requires_grad_()
+
+'''
+Computes the loss of a cell based on the predicted state of a partial 3x3 grid of neighbors (color and fitness channels) vs actual
+'''
+def partial_CA_Loss(pred, actual, x, y):
+    next_frame_pred = Grid.getPartialColorChannels(pred, x, y)
+    target_frame = Grid.getPartialColorChannels(actual, x, y)
+    fit_preds = Grid.getPartialFitnessChannels(pred, x, y)
+    fit_targets = Grid.getPartialFitnessChannels(actual, x, y)
+    with torch.enable_grad():
+        frame_loss = F.mse_loss(next_frame_pred, torch.from_numpy(target_frame))
         fit_loss = F.mse_loss(fit_preds, torch.from_numpy(fit_targets))
         losses = torch.tensor([frame_loss, fit_loss])
         norm_loss = torch.sum(losses) / len(losses)

@@ -19,7 +19,7 @@ GRID_H = 100  # cells
 FIT_CHANNELS = 1
 NUM_EPOCHS = 5
 # How many cells to stochastically choose to update at each next frame eval
-UPDATES_PER_STEP = 50
+# UPDATES_PER_STEP = 50
 # initialize grid
 CLOCK = pygame.time.Clock()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -46,8 +46,7 @@ class CAGame():
         # cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
         cell_net = CellConvSimple().to(device)
         first_params = cell_net.layer0.parameters().__next__().detach()
-        # last_params = cell_net.layer3.parameters().__next__().detach()
-        last_params = cell_net.layer2.parameters().__next__().detach()
+        last_params = cell_net.layer3.parameters().__next__().detach()
         # first_params, last_params = CellConv.firstLastParams(first_params, last_params)
         first_params, last_params = CellConvSimple.firstLastParams(first_params, last_params)
         self.network_params_size = ((first_params.detach().numpy().flatten().size +
@@ -79,17 +78,17 @@ class CAGame():
         self.grid.data[x][y] = cell.vector()
 
     def testCellConv(self):
-        cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
+        # cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
         color = [256, 0, 0]
         xy = np.random.choice(100, (20, 2), replace=False)
         for i in range(0, 20):
+            cell_net = CellConvSimple().to(device)
             cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
             x, y = xy[i]
             self.updateCellGrid(cell, x, y)
 
     # do for every cell, add neighbors' fitness predictions to cell as we go
     # update each cell's fitness at end of running all training of cells in grid
-    #todo do the channels of the grid also get updated??
     def updateCell(self, node: Cell, previous_grid=None):
         vector_neighbors = np.zeros(shape=(4, 3, 3))
         neighbors = []
@@ -116,7 +115,8 @@ class CAGame():
         #TODO move getting full state to function
         # Remove the network params from the grid state
         full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
-        pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
+        # pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
+        pred, loss = CellConvSimple.train_module(node, full_state=full_state, num_epochs=NUM_EPOCHS)
 
         self.updateCellGrid(node, x, y)
 
@@ -133,15 +133,15 @@ class CAGame():
         # update cell weights
 
 
-    def writeFrame(self):
-        # randomly sample grid to call updates on
-        x_inds = np.choice(GRID_W, UPDATES_PER_STEP)
-        y_inds = np.choice(GRID_H, UPDATES_PER_STEP)
-        # update cells in sample
-        for x, y in zip(x_inds, y_inds):
-            self.updateCell(self.grid.data[x][y])
-        # update grid, fitnesses? cell writes self to grid
-        pass
+    # def writeFrame(self):
+    #     # randomly sample grid to call updates on
+    #     x_inds = np.choice(GRID_W, UPDATES_PER_STEP)
+    #     y_inds = np.choice(GRID_H, UPDATES_PER_STEP)
+    #     # update cells in sample
+    #     for x, y in zip(x_inds, y_inds):
+    #         self.updateCell(self.grid.data[x][y])
+    #     # update grid, fitnesses? cell writes self to grid
+    #     pass
 
     # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
     # Free the memory used by the eaten cell and allocate new instance of replicated

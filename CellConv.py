@@ -1,8 +1,6 @@
 import numpy as np
 from torch import nn
 import torch
-from torch.autograd import Function
-# from torch.autograd.grad_mode import F
 import torch.nn.functional as F
 from tqdm import tqdm
 
