@@ -35,7 +35,7 @@ the cell. '''
 def setChannels(first_params, last_params):
     network_params_size = ((first_params.detach().numpy().flatten().size +
                             last_params.detach().numpy().flatten().size))
-    # 3 channels for rgb, + network params size (times 9 neighbors??) + fitness channels
+    # 3 channels for rgb, + network params size + fitness channels
     CHANNELS = 3 + network_params_size + FIT_CHANNELS
     return CHANNELS
 
@@ -115,7 +115,7 @@ class CAGame():
         # After we update the cell, update the previous neighbors to the current grid config
         #TODO move getting full state to function
         # Remove the network params from the grid state
-        full_state = np.dstack((self.grid.data[:,:, 3:4], self.grid.data[:, :, -2:-1]))
+        full_state = np.dstack((self.grid.data[:,:, 3:4], self.grid.data[:, :, -2:-1])) # colors and fitness
         pred = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid)
 
         self.updateCellGrid(node, x, y)
@@ -143,9 +143,14 @@ class CAGame():
 
     # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
     # Free the memory used by the eaten cell and allocate new instance of replicated
-    def eatCells(self):
-        #TODO
-        pass
+    def eatCells(self, x, y):
+        # call if computed updated grid has two cells
+        # assumes more than one cell at self.intermediate_cell_grid
+        dominant_cell = self.intermediate_cell_grid[x, y][0]
+        for cell in self.intermediate_cell_grid[x, y]:
+            if cell.fitness > dominant_cell.fitness:
+                dominant_cell = cell
+        self.updateCellGrid(dominant_cell, x, y)
 
     '''
     Handle keyboard presses and other events
