@@ -30,7 +30,8 @@ class CellConvSimple(nn.Module):
         self.layer3 = nn.Conv2d(256, 512, 3, stride=1, padding=1)
         self.layer4 = nn.Conv2d(512, 256, 3, stride=1, padding=1)
         self.layer5 = nn.Conv2d(256, 128, 3, stride=1, padding=1)
-        self.layer6 = nn.Conv2d(128, 4, 3, stride=1, padding=1)
+        # self.layer6 = nn.Conv2d(128, 4, 3, stride=1, padding=1)
+        self.layer6 = nn.Conv2d(128, 9, 3, stride=1, padding=1)
         self.encoder = nn.Sequential(
             self.layer0,
             nn.ReLU(True),
@@ -157,7 +158,6 @@ class CellConvSimple(nn.Module):
             lr=learning_rate,
             weight_decay=0.001, #TODO Check weight decay params
             momentum=0.9)
-        loss = 1000  # defaults to big
         for epoch in tqdm(range(num_epochs)):
             # Note: no inner for loop here because only doing one frame pred at a time
             # for each cell feed neighbors and ask for full grid predictions
@@ -165,18 +165,25 @@ class CellConvSimple(nn.Module):
             input = torch.from_numpy(cell.last_neighbors.astype(np.double))
             input = input[None, :, :, :]
             input = input.float().requires_grad_()
-            next_full_state_pred = net(input)
-            partial_pred_shape = (3, 3, 4)
+            next_pred = net(input)
+            # partial_pred_shape = (3, 3, 4)
+            partial_pred_shape = (3, 3, 9)  # 9 channels: 3 color, 5 movement, 1 fitness
             # next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
-            next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, partial_pred_shape)
+            next_pred = CellConvSimple.reshape_output(next_pred, partial_pred_shape)
+            # take movement from the middle cell of the output
+            cell.move = next_pred[1][1][-6:-1]
             # TODO: get next frame
-            loss = partial_CA_Loss(next_full_state_pred, full_state, cell.x, cell.y)
+            # give movement to the grid which updates intermediate grid
+            # once movements have all been calculated, give next frame to cell and backprop the loss
+            # note probably have to move this backprop stuff to a separate function
+            # other note, don't think we can run more than one epoch because of this structure
+            loss = partial_CA_Loss(next_pred, next_frame, cell.x, cell.y)
             # print('pred: ', next_full_state_pred)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
         cell.updateColor()
-        return next_full_state_pred, loss.item()
+        return next_pred, loss.item()
 
 '''
 Computes the loss of a cell based on the predicted state of the whole grid (color and fitness) vs actual

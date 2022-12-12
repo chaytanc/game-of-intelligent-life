@@ -17,6 +17,7 @@ CELL_SIZE = 10  # pixels
 GRID_W = 100  # cells
 GRID_H = 100  # cells
 FIT_CHANNELS = 1
+MOVE_CHANNELS = 5
 NUM_EPOCHS = 7
 # How many cells to stochastically choose to update at each next frame eval
 # UPDATES_PER_STEP = 50
@@ -33,7 +34,7 @@ def setChannels(first_params, last_params):
     network_params_size = ((first_params.detach().numpy().flatten().size +
                             last_params.detach().numpy().flatten().size))
     # 3 channels for rgb, + network params size + fitness channels
-    CHANNELS = 3 + network_params_size + FIT_CHANNELS
+    CHANNELS = 3 + network_params_size + MOVE_CHANNELS + FIT_CHANNELS
     return CHANNELS
 
 
@@ -56,28 +57,36 @@ class CAGame():
         cell_net.output_shape = OUTPUT_SHAPE
 
         # Grid of Cell objects, corresponding with their vectorized forms stored below for computation
-        self.cell_grid = [[0]*GRID_W for _ in range(GRID_H)]
+        self.cell_grid: [[Cell]] = [[0]*GRID_W for _ in range(GRID_H)]
+        # Has extra dim so multiple cells can occupy the same place in the grid
+        self.intermediate_cell_grid = [[[]]*GRID_W for _ in range(GRID_H)]
         for r in range(GRID_H):
             for c in range(GRID_W):
                 new_cell = Cell(self.network_params_size)
                 new_cell.x = r
                 new_cell.y = c
                 self.cell_grid[r][c] = new_cell
+                self.intermediate_cell_grid[r][c].append(new_cell)
 
         # Grid, holding vectorized cells in data used to actually get loss of cells
         self.grid = Grid(CELL_SIZE, grid_size=(GRID_W, GRID_H, CHANNELS), network_params_size=self.network_params_size)
         self.screen = pygame.display.set_mode(self.grid.res)
-        self.isRunning = False
         pygame.display.set_caption("Cellular Automata", "CA")
 
     '''
     Enforces updating the corresponding grid data when the cell object changes
     '''
-    def updateCellGrid(self, cell, x, y, direction):
-        cell.move = np.array([0, 0, 0, 0, 0])
-        cell.move[direction] = 1
+    def updateCellGrid(self, cell, x, y):
         self.cell_grid[x][y] = cell
         self.grid.data[x][y] = cell.vector()
+        cell.x = x
+        cell.y = y
+        self.updateIntermediateCellGrid(cell, x, y)
+
+    def updateIntermediateCellGrid(self, cell, x, y):
+        # Assume that cell.move contains direction already
+        direction = np.argmax(cell.move)
+        # right, left, down, up, stay
         if direction == 1:
             next_pos = x + 1, y
         elif direction == 2:
@@ -86,9 +95,9 @@ class CAGame():
             next_pos = x, y - 1
         elif direction == 4:
             next_pos = x, y + 1
-        else:
+        else:  # 0
             next_pos = x, y
-        self.intermediate_cell_grid[next_pos[0]][next_pos[1]] = cell
+        self.intermediate_cell_grid[next_pos[0]][next_pos[1]].append(cell)
 
 
     def testCellConv(self):
@@ -111,17 +120,27 @@ class CAGame():
             if y == 0:
                 valid_directions.remove(3)
             direction = np.random.choice(valid_directions)
-            self.updateCellGrid(cell, x, y, direction)
+            cell.move[direction] = 1
+            self.updateCellGrid(cell, x, y)
 
     # take next step by making all cells move according to their movement vector defined by the 5 movement channels
     # or move according to intermediate_cell_grid???
+
+    # Loop through each cell, get movement, update intermediate cell grid
+    # after temporarily movign all cells, loop through again and see if any moved to the same place
+    # if so call eatCells to break the tie
     def moveCells(self):
-        for row in self.cell_grid:
-            for cell in row:
+        for y, row in enumerate(self.cell_grid):
+            for x, cell in enumerate(row):
                 if cell.network:
-                    new_pos = cell.x, cell.y
-                    movement_vector = self.grid.data[cell.x][cell.y][-6:-1]
-                    direction = np.argmax(movement_vector)
+                    movement_vector = Cell.getMovement(x, y, self.grid)
+                    cell.move = movement_vector
+                    self.updateIntermediateCellGrid(cell, x, y)
+
+        for y, row in enumerate(self.intermediate_cell_grid):
+            for x, cell in enumerate(row):
+                if cell.network:
+
 
 
     # do for every cell, add neighbors' fitness predictions to cell as we go
@@ -278,7 +297,6 @@ class CAGame():
 
             self.draw()
             self.eventHandler()
-            # XXX why flip
             pygame.display.flip()
             i += 1
         print(losses)

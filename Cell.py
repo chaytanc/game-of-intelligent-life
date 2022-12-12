@@ -21,7 +21,7 @@ class Cell():
         self.neighbors_fit_predictions = []
         self.last_neighbors = np.array([[0.0, 0.0, 0.0, 0.0] * 9])
         # default do nothing
-        self.move = np.array([1, 0, 0, 0, 0])
+        self.move = np.array([1, 0, 0, 0, 0]) #todo update in trainmodule
         self.x = 0
         self.y = 0
         # self.ch_dim = channel_dim
@@ -35,6 +35,11 @@ class Cell():
 
     def updateColor(self):
         self.color = self.network.getNetworkColor()
+
+    def updateMove(self, data):
+        # self.move =
+        #TODO
+        pass
 
 
     #todo may need to normalize the loss somehow such that the fitness value is numerically stable
@@ -58,7 +63,12 @@ class Cell():
     def getCellFitness(x, y, grid):
         return grid.data[x, y][-2:-1]
 
+    # Five channels before fitness are for movement
+    @staticmethod
+    def getMovement(x, y, grid):
+        return grid.data[x, y][-6:-1]
+
     @staticmethod
     def getCellNetwork(x, y, grid):
-        return grid.data[x, y][3:-2]
+        return grid.data[x, y][3:-6]
 
