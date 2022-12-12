@@ -6,10 +6,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from Cell import Cell
 from CellConv import CellConv
+from ResidualBlock import ResidualBlock
 from CellConvSimple import CellConvSimple
 import pygame
 from Grid import Grid
-from ResidualBlock import ResidualBlock
+from CellConvSimple import partial_CA_Loss
 
 # Constants
 OBSERVABILITY = 'partial'
@@ -140,7 +141,18 @@ class CAGame():
         for y, row in enumerate(self.intermediate_cell_grid):
             for x, cell in enumerate(row):
                 if cell.network:
+                    pass
 
+    # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
+    # Free the memory used by the eaten cell and allocate new instance of replicated
+    def eatCells(self, x, y):
+        # call if computed updated grid has two cells
+        # assumes more than one cell at self.intermediate_cell_grid
+        dominant_cell = self.intermediate_cell_grid[x, y][0]
+        for cell in self.intermediate_cell_grid[x, y]:
+            if cell.fitness > dominant_cell.fitness:
+                dominant_cell = cell
+        self.updateCellGrid(dominant_cell, x, y)
 
 
     # do for every cell, add neighbors' fitness predictions to cell as we go
@@ -190,27 +202,46 @@ class CAGame():
         # compare prediction to actual s' after movement to get loss
         # update cell weights
 
+    ''' 
+    Can switch between passing in full previous state or only partially observable prev state / neighbors
+    '''
+    @staticmethod
+    def train_module(cell, full_state, prev_state=None, num_epochs=1):
+        learning_rate = 0.01
+        net = cell.network
+        #TODO hyperparam tuning
+        optimizer = torch.optim.SGD(
+            net.parameters(),
+            lr=learning_rate,
+            weight_decay=0.001, #TODO Check weight decay params
+            momentum=0.9)
+        for epoch in tqdm(range(num_epochs)):
+            # Note: no inner for loop here because only doing one frame pred at a time
+            # for each cell feed neighbors and ask for full grid predictions
+            net = net.float()
+            input = torch.from_numpy(cell.last_neighbors.astype(np.double))
+            input = input[None, :, :, :]
+            input = input.float().requires_grad_()
+            next_pred = net(input)
+            # partial_pred_shape = (3, 3, 4)
+            partial_pred_shape = (3, 3, 9)  # 9 channels: 3 color, 5 movement, 1 fitness
+            # next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
+            next_pred = CellConvSimple.reshape_output(next_pred, partial_pred_shape)
+            # take movement from the middle cell of the output
+            cell.move = next_pred[1][1][-6:-1]
+            # TODO: get next frame
+            # give movement to the grid which updates intermediate grid
+            # once movements have all been calculated, give next frame to cell and backprop the loss
+            # note probably have to move this backprop stuff to a separate function
+            # other note, don't think we can run more than one epoch because of this structure
+            loss = partial_CA_Loss(next_pred, next_frame, cell.x, cell.y)
+            # print('pred: ', next_full_state_pred)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        cell.updateColor()
+        return next_pred, loss.item()
 
-    # def writeFrame(self):
-    #     # randomly sample grid to call updates on
-    #     x_inds = np.choice(GRID_W, UPDATES_PER_STEP)
-    #     y_inds = np.choice(GRID_H, UPDATES_PER_STEP)
-    #     # update cells in sample
-    #     for x, y in zip(x_inds, y_inds):
-    #         self.updateCell(self.grid.data[x][y])
-    #     # update grid, fitnesses? cell writes self to grid
-    #     pass
-
-    # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
-    # Free the memory used by the eaten cell and allocate new instance of replicated
-    def eatCells(self, x, y):
-        # call if computed updated grid has two cells
-        # assumes more than one cell at self.intermediate_cell_grid
-        dominant_cell = self.intermediate_cell_grid[x, y][0]
-        for cell in self.intermediate_cell_grid[x, y]:
-            if cell.fitness > dominant_cell.fitness:
-                dominant_cell = cell
-        self.updateCellGrid(dominant_cell, x, y)
 
     '''
     Handle keyboard presses and other events
@@ -254,6 +285,7 @@ class CAGame():
                         event.type == pygame.QUIT:
                     pygame.display.quit(), exit()
 
+    # MARK: pygame stuff
     '''
     Draw everything on the screen
     '''
