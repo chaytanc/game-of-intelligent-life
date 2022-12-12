@@ -26,19 +26,19 @@ class Grid():
     @staticmethod
     def getPartialColorChannels(data, x, y):
         # vector_neighbors = np.zeros(shape=(4, 3, 3))
-        vector_neighbors = torch.zeros((3, 3))
+        vector_neighbors = torch.zeros((3, 3, 3))
         # Get cell's neighbors, 3x3
         for nx in range(-1, 2):
             for ny in range(-1, 2):
-                vector_neighbors[nx + 1][ny + 1] = data[x + nx, y + ny, 0:3]
-                # vector_neighbors[nx + 1][ny + 1][1] = data[x + nx, y + ny, 1]
-                # vector_neighbors[nx + 1][ny + 1][2] = data[x + nx, y + ny, 2]
-        return torch.cat(vector_neighbors)
-        # return torch.tensor(vector_neighbors)
+                vector_neighbors[nx + 1][ny + 1][0] = data[x + nx, y + ny, 0]
+                vector_neighbors[nx + 1][ny + 1][1] = data[x + nx, y + ny, 1]
+                vector_neighbors[nx + 1][ny + 1][2] = data[x + nx, y + ny, 2]
+        # return torch.cat(vector_neighbors)
+        return vector_neighbors
 
     @staticmethod
     def getPartialFitnessChannels(data, x, y):
-        vector_neighbors = np.zeros(shape=(3, 3, 1))
+        vector_neighbors = torch.zeros((3, 3, 1))
         for nx in range(-1, 2):
             for ny in range(-1, 2):
                 vector_neighbors[nx + 1][ny + 1][0] = data[x + nx, y + ny, -1] # -1 fitness channel

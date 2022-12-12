@@ -17,7 +17,7 @@ CELL_SIZE = 10  # pixels
 GRID_W = 100  # cells
 GRID_H = 100  # cells
 FIT_CHANNELS = 1
-NUM_EPOCHS = 5
+NUM_EPOCHS = 7
 # How many cells to stochastically choose to update at each next frame eval
 # UPDATES_PER_STEP = 50
 # initialize grid
@@ -73,19 +73,56 @@ class CAGame():
     '''
     Enforces updating the corresponding grid data when the cell object changes
     '''
-    def updateCellGrid(self, cell, x, y):
+    def updateCellGrid(self, cell, x, y, direction):
+        cell.move = np.array([0, 0, 0, 0, 0])
+        cell.move[direction] = 1
         self.cell_grid[x][y] = cell
         self.grid.data[x][y] = cell.vector()
+        if direction == 1:
+            next_pos = x + 1, y
+        elif direction == 2:
+            next_pos = x - 1, y
+        elif direction == 3:
+            next_pos = x, y - 1
+        elif direction == 4:
+            next_pos = x, y + 1
+        else:
+            next_pos = x, y
+        self.intermediate_cell_grid[next_pos[0]][next_pos[1]] = cell
+
 
     def testCellConv(self):
         # cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
         color = [256, 0, 0]
         xy = np.random.choice(100, (20, 2), replace=False)
+        # nothing, left, right, up, down
+        directions = [0, 1, 2, 3, 4]
+        valid_directions = directions
         for i in range(0, 20):
             cell_net = CellConvSimple().to(device)
             cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
             x, y = xy[i]
-            self.updateCellGrid(cell, x, y)
+            if x == 99:
+                valid_directions.remove(2)
+            if x == 0:
+                valid_directions.remove(1)
+            if y == 99:
+                valid_directions.remove(4)
+            if y == 0:
+                valid_directions.remove(3)
+            direction = np.random.choice(valid_directions)
+            self.updateCellGrid(cell, x, y, direction)
+
+    # take next step by making all cells move according to their movement vector defined by the 5 movement channels
+    # or move according to intermediate_cell_grid???
+    def moveCells(self):
+        for row in self.cell_grid:
+            for cell in row:
+                if cell.network:
+                    new_pos = cell.x, cell.y
+                    movement_vector = self.grid.data[cell.x][cell.y][-6:-1]
+                    direction = np.argmax(movement_vector)
+
 
     # do for every cell, add neighbors' fitness predictions to cell as we go
     # update each cell's fitness at end of running all training of cells in grid
@@ -113,7 +150,10 @@ class CAGame():
         node.last_neighbors = vector_neighbors
         # After we update the cell, update the previous neighbors to the current grid config
         # Removes the network params from the grid state
+        #TODO change to partial state and get next frame of grid
         full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
+
+        # partial_state = vector_neighbors
         # pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
         pred, loss = CellConvSimple.train_module(node, full_state=full_state, num_epochs=NUM_EPOCHS)
         # todo update cell.fitness property based on loss
@@ -221,19 +261,20 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        iterations = 2
+        iterations = 5
         i = 0
         losses = []
-        # min
+        self.testCellConv()
         while i < iterations:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
-            self.testCellConv()
-
+            p = True
             for row in self.cell_grid:
                 for cell in row:
                     if cell.network:
                         loss = self.updateCell(cell)
-                        losses.append(loss)
+                        if p:
+                            losses.append(loss)
+                            p = False
 
             self.draw()
             self.eventHandler()
