@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from Cell import Cell
 from CellConv import CellConv
+from CellConvSimple import CellConvSimple
 import pygame
 from Grid import Grid
 from ResidualBlock import ResidualBlock
@@ -42,10 +43,13 @@ This class continuously draws the grid on the pygame window according to cell up
 class CAGame():
 
     def __init__(self):
-        cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
+        # cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
+        cell_net = CellConvSimple().to(device)
         first_params = cell_net.layer0.parameters().__next__().detach()
-        last_params = cell_net.layer3.parameters().__next__().detach()
-        first_params, last_params = CellConv.firstLastParams(first_params, last_params)
+        # last_params = cell_net.layer3.parameters().__next__().detach()
+        last_params = cell_net.layer2.parameters().__next__().detach()
+        # first_params, last_params = CellConv.firstLastParams(first_params, last_params)
+        first_params, last_params = CellConvSimple.firstLastParams(first_params, last_params)
         self.network_params_size = ((first_params.detach().numpy().flatten().size +
                                      last_params.detach().numpy().flatten().size))
         CHANNELS = setChannels(first_params, last_params)
@@ -53,8 +57,6 @@ class CAGame():
         cell_net.output_shape = OUTPUT_SHAPE
 
         # Grid of Cell objects, corresponding with their vectorized forms stored below for computation
-        # self.cell_grid = [[Cell(self.network_params_size)] * GRID_W] * GRID_H
-        # self.cell_grid = [[0] * GRID_W] * GRID_H
         self.cell_grid = [[0]*GRID_W for _ in range(GRID_H)]
         for r in range(GRID_H):
             for c in range(GRID_W):
@@ -62,10 +64,6 @@ class CAGame():
                 new_cell.x = r
                 new_cell.y = c
                 self.cell_grid[r][c] = new_cell
-        # for r, row in enumerate(self.cell_grid):
-        #     for c, col in enumerate(row):
-        #         self.cell_grid[r][c].x = row
-        #         self.cell_grid[r][c].y = col
 
         # Grid, holding vectorized cells in data used to actually get loss of cells
         self.grid = Grid(CELL_SIZE, grid_size=(GRID_W, GRID_H, CHANNELS), network_params_size=self.network_params_size)
@@ -230,11 +228,7 @@ class CAGame():
         while i < iterations:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
             self.testCellConv()
-            # self.screen.fill(self.cellColors[0])
-            # XXX removed or framebyframe
-            if self.isRunning:
-                pass
-            # XXX todo finish updateCells func
+
             for row in self.cell_grid:
                 for cell in row:
                     if cell.network:
