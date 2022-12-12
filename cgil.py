@@ -1,14 +1,9 @@
 from sys import exit
 from math import ceil
-
 import torch
-
-import tqdm
-# from IPython.display import Image, HTML, clear_output
-# import moviepy.editor as mvp
-# from moviepy.video.io.ffmpeg_writer import FFMPEG_VideoWriter
-# import PIL.Image, PIL.ImageDraw
+from tqdm import tqdm
 import numpy as np
+import matplotlib.pyplot as plt
 from Cell import Cell
 from CellConv import CellConv
 import pygame
@@ -21,6 +16,7 @@ CELL_SIZE = 10  # pixels
 GRID_W = 100  # cells
 GRID_H = 100  # cells
 FIT_CHANNELS = 1
+NUM_EPOCHS = 5
 # How many cells to stochastically choose to update at each next frame eval
 UPDATES_PER_STEP = 50
 # initialize grid
@@ -87,38 +83,46 @@ class CAGame():
     def testCellConv(self):
         cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
         color = [256, 0, 0]
-        cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
-        self.updateCellGrid(cell, 5, 0)
+        xy = np.random.choice(100, (20, 2), replace=False)
+        for i in range(0, 20):
+            cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
+            x, y = xy[i]
+            self.updateCellGrid(cell, x, y)
 
     # do for every cell, add neighbors' fitness predictions to cell as we go
     # update each cell's fitness at end of running all training of cells in grid
     #todo do the channels of the grid also get updated??
     def updateCell(self, node: Cell, previous_grid=None):
-        vector_neighbors = []
+        vector_neighbors = np.zeros(shape=(4, 3, 3))
         neighbors = []
         x = node.x
         y = node.y
         # Get cell's neighbors, 3x3
         for nx in range(-1, 2):
-            vector_row = []
             for ny in range(-1, 2):
+                # vector_row = []
                 # if not (nx == 0 and ny == 0):
                 # vector_neighbors.append(self.grid.data[x + nx, y + ny])
-                vector_row.append(self.grid.data[x + nx, y + ny])
+                vector_neighbors[0][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 0]
+                vector_neighbors[1][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 1]
+                vector_neighbors[2][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 2]
+                vector_neighbors[3][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -1]
                 neighbor = self.cell_grid[x + nx][y + ny]
                 neighbors.append(neighbor)
-            vector_neighbors.append(vector_row)
+                # vector_neighbors.append(vector_row)
                 # else:
                 #     neighbors.append()
-        vector_neighbors = np.array(vector_neighbors)
+        # vector_neighbors = np.array(vector_neighbors)
         node.last_neighbors = vector_neighbors
         # After we update the cell, update the previous neighbors to the current grid config
         #TODO move getting full state to function
         # Remove the network params from the grid state
-        full_state = np.dstack((self.grid.data[:,:, 3:4], self.grid.data[:, :, -2:-1])) # colors and fitness
-        pred = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid)
+        full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
+        pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
 
         self.updateCellGrid(node, x, y)
+
+        return loss
 
         # feed neighbors vectors as input array to conv net
         # train calls forward on cell
@@ -220,7 +224,10 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        while True:
+        iterations = 2
+        i = 0
+        losses = []
+        while i < iterations:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
             self.testCellConv()
             # self.screen.fill(self.cellColors[0])
@@ -231,12 +238,20 @@ class CAGame():
             for row in self.cell_grid:
                 for cell in row:
                     if cell.network:
-                        self.updateCell(cell)
+                        loss = self.updateCell(cell)
+                        losses.append(loss)
 
             self.draw()
             self.eventHandler()
             # XXX why flip
             pygame.display.flip()
+            i += 1
+        print(losses)
+        plt.title('Loss')
+        plt.xlim((0, 100))
+        plt.plot(np.arange(len(losses)), losses, 'g-', label="means")
+        plt.legend(loc="upper right")
+        plt.show()
 
 
 def main():
