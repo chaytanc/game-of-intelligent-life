@@ -24,7 +24,7 @@ class CellConvSimple(nn.Module):
         super(CellConvSimple, self).__init__()
         self.output_shape = output_shape
 
-        self.layer0 = nn.Conv2d(4, 64, 3, stride=1, padding=1)
+        self.layer0 = nn.Conv2d(9, 64, 3, stride=1, padding=1)
         self.layer1 = nn.Conv2d(64, 128, 3, stride=1, padding=1)
         self.layer2 = nn.Conv2d(128, 256, 3, stride=1, padding=1)
         self.layer3 = nn.Conv2d(256, 512, 3, stride=1, padding=1)
@@ -165,13 +165,17 @@ def CA_Loss(y_pred, y):
 Computes the loss of a cell based on the predicted state of a partial 3x3 grid of neighbors (color and fitness channels) vs actual
 '''
 def partial_CA_Loss(pred, actual, x, y):
-    next_frame_pred = Grid.getPartialColorChannels(pred, x, y)
-    target_frame = Grid.getPartialColorChannels(actual, x, y)
-    fit_preds = Grid.getPartialFitnessChannels(pred, x, y)
-    fit_targets = Grid.getPartialFitnessChannels(actual, x, y)
+    # next_frame_pred = Grid.getPartialColorChannels(pred, x, y)
+    next_frame_pred = pred[:, :, 0:3]
+    # target_frame = Grid.getPartialColorChannels(actual, x, y)
+    target_frame = actual[:, :, 0:3]
+    # fit_preds = Grid.getPartialFitnessChannels(pred, x, y)
+    fit_preds = pred[:, :, -1]
+    # fit_targets = Grid.getPartialFitnessChannels(actual, x, y)
+    fit_targets = actual[:, :, -1]
     with torch.enable_grad():
-        frame_loss = F.mse_loss(next_frame_pred, target_frame)
-        fit_loss = F.mse_loss(fit_preds, fit_targets)
+        frame_loss = F.mse_loss(next_frame_pred, torch.from_numpy(target_frame))
+        fit_loss = F.mse_loss(fit_preds, torch.from_numpy(fit_targets))
         losses = torch.tensor([frame_loss, fit_loss])
         norm_loss = torch.sum(losses) / len(losses)
     return norm_loss.requires_grad_()

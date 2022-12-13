@@ -21,14 +21,16 @@ class Cell():
         self.neighbors_fit_predictions = []
         self.last_neighbors = np.array([[0.0, 0.0, 0.0, 0.0] * 9])
         # default do nothing
-        self.move = np.array([1, 0, 0, 0, 0]) #todo update in trainmodule
+        self.move = np.array([1, 0, 0, 0, 0])
         self.x = 0
         self.y = 0
-        # self.ch_dim = channel_dim
+        self.losses = []
+        self.pred = None
 
     '''
     Represents the convnet cell as a numpy array, useful for storing in the CAGame().grid prop.
     '''
+
     def vector(self) -> np.ndarray:
         vec = np.concatenate([self.color, self.network_vec, self.move, self.fitness])
         return vec
@@ -36,16 +38,11 @@ class Cell():
     def updateColor(self):
         self.color = self.network.getNetworkColor()
 
-    def updateMove(self, data):
-        # self.move =
-        #TODO
-        pass
-
-
-    #todo may need to normalize the loss somehow such that the fitness value is numerically stable
+    # todo may need to normalize the loss somehow such that the fitness value is numerically stable
     '''
     Updates the cell's fitness according to the accuracy of its predictions and how fit its neighbors predict it to be
     '''
+
     def updateFitness(self, loss):
         # todo call this somewhere
         # Social fitness term normalizes over the predictions the neighbors of this cell estimated its fitness to be
@@ -66,9 +63,26 @@ class Cell():
     # Five channels before fitness are for movement
     @staticmethod
     def getMovement(x, y, grid):
-        return grid.data[x, y][-6:-1]
+        # nothing, left, right, up, down
+        movement_vector = grid.data[y, x][-6:-1]
+        movement = np.argmax(movement_vector)
+        if x <= 1 and movement == 1:
+            movement_vector = [1, 0, 0, 0, 0]
+        if x >= 98 and movement == 2:
+            movement_vector = [1, 0, 0, 0, 0]
+        if y <= 1 and movement == 3:
+            movement_vector = [1, 0, 0, 0, 0]
+        if y >= 98 and movement == 4:
+            movement_vector = [1, 0, 0, 0, 0]
+        return movement_vector
 
     @staticmethod
     def getCellNetwork(x, y, grid):
         return grid.data[x, y][3:-6]
 
+    def __str__(self):
+        return str(self.color)
+
+
+    def __repr__(self):
+        return str(self.color)
