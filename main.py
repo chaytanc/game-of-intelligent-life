@@ -82,7 +82,7 @@ class CAGame():
         self.grid.data[x][y] = cell.vector()
         cell.x = x
         cell.y = y
-        self.updateIntermediateCellGrid(cell, x, y)
+
 
     def updateIntermediateCellGrid(self, cell, x, y):
         # Assume that cell.move contains direction already
@@ -122,15 +122,16 @@ class CAGame():
                 valid_directions.remove(3)
             direction = np.random.choice(valid_directions)
             cell.move[direction] = 1
+            self.updateIntermediateCellGrid(cell, x, y)
             self.updateCellGrid(cell, x, y)
 
     # take next step by making all cells move according to their movement vector defined by the 5 movement channels
     # or move according to intermediate_cell_grid???
 
     # Loop through each cell, get movement, update intermediate cell grid
-    # after temporarily movign all cells, loop through again and see if any moved to the same place
-    # if so call eatCells to break the tie
-    def moveCells(self):
+    # after temporarily moving all cells, loop through again and see if any moved to the same place
+    # if so call eatCells to break the tie and updateCellGrid, else just updateCellGrid
+    def moveCell(self, cell):
         for y, row in enumerate(self.cell_grid):
             for x, cell in enumerate(row):
                 if cell.network:
@@ -140,8 +141,10 @@ class CAGame():
 
         for y, row in enumerate(self.intermediate_cell_grid):
             for x, cell in enumerate(row):
-                if cell.network:
-                    pass
+                if len(cell) > 1:
+                    self.eatCells(x, y)
+                else:
+                    self.updateCellGrid(cell[0], x, y)
 
     # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
     # Free the memory used by the eaten cell and allocate new instance of replicated
@@ -158,7 +161,7 @@ class CAGame():
     # do for every cell, add neighbors' fitness predictions to cell as we go
     # update each cell's fitness at end of running all training of cells in grid
     def updateCell(self, node: Cell, previous_grid=None):
-        vector_neighbors = np.zeros(shape=(4, 3, 3))
+        vector_neighbors = np.zeros(shape=(9, 3, 3))
         neighbors = []
         x = node.x
         y = node.y
@@ -171,7 +174,12 @@ class CAGame():
                 vector_neighbors[0][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 0]
                 vector_neighbors[1][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 1]
                 vector_neighbors[2][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 2]
-                vector_neighbors[3][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -1]
+                vector_neighbors[3:8][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -6:-1]
+                # vector_neighbors[4][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -5]
+                # vector_neighbors[5][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -4]
+                # vector_neighbors[6][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -3]
+                # vector_neighbors[7][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -2]
+                vector_neighbors[8][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -1]
                 neighbor = self.cell_grid[x + nx][y + ny]
                 neighbors.append(neighbor)
                 # vector_neighbors.append(vector_row)
@@ -182,11 +190,11 @@ class CAGame():
         # After we update the cell, update the previous neighbors to the current grid config
         # Removes the network params from the grid state
         #TODO change to partial state and get next frame of grid
-        full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
+        # full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
 
         # partial_state = vector_neighbors
         # pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
-        pred, loss = CellConvSimple.train_module(node, full_state=full_state, num_epochs=NUM_EPOCHS)
+        pred, loss = CellConvSimple.train_module(node, num_epochs=NUM_EPOCHS)
         # todo update cell.fitness property based on loss
         self.updateCellGrid(node, x, y)
 
@@ -206,7 +214,7 @@ class CAGame():
     Can switch between passing in full previous state or only partially observable prev state / neighbors
     '''
     @staticmethod
-    def train_module(cell, full_state, prev_state=None, num_epochs=1):
+    def train_module(cell, full_state=None, prev_state=None, num_epochs=1):
         learning_rate = 0.01
         net = cell.network
         #TODO hyperparam tuning
@@ -231,9 +239,11 @@ class CAGame():
             cell.move = next_pred[1][1][-6:-1]
             # TODO: get next frame
             # give movement to the grid which updates intermediate grid
+            CellConvSimple.moveCell(cell)
             # once movements have all been calculated, give next frame to cell and backprop the loss
             # note probably have to move this backprop stuff to a separate function
             # other note, don't think we can run more than one epoch because of this structure
+            next_frame = getPartialFrame(cell)
             loss = partial_CA_Loss(next_pred, next_frame, cell.x, cell.y)
             # print('pred: ', next_full_state_pred)
             optimizer.zero_grad()
