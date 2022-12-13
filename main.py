@@ -360,11 +360,12 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        iterations = 100
-        i = 0
+        iterations = 20
+        itr = 0
         self.testCellConv()
-        while i < iterations:
-        # while True:
+        running = True
+        # while i < iterations:
+        while running:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
             for row in self.cell_grid:
                 for cell in row:
@@ -393,7 +394,9 @@ class CAGame():
             self.draw()
             self.eventHandler()
             pygame.display.flip()
-            i += 1
+            itr += 1
+            if itr == iterations:
+                running = False
 
         count = 0
         for i, row in enumerate(self.cell_grid):
