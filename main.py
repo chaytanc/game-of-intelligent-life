@@ -363,8 +363,8 @@ class CAGame():
         iterations = 100
         i = 0
         self.testCellConv()
-        while i < iterations:
-        # while True:
+        # while i < iterations:
+        while True:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
             for row in self.cell_grid:
                 for cell in row:
