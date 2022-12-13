@@ -126,19 +126,17 @@ class CellConvSimple(nn.Module):
 
     def getNetworkColor(self):
         # Note: only using first 5 weights
-        # sum of first layer weights, sum of last layer weights, sum of middle layer weights??
+        # sum of first layer weights, sum of last layer weights, sum of middle layer weights
         first_params = self.layer0.parameters().__next__().detach().numpy()
         middle_params = self.layer1.parameters().__next__().detach().numpy()
         last_params = self.layer3.parameters().__next__().detach().numpy()
         color = [self.sigmoid(np.average(first_params[:10])),
                  self.sigmoid(np.average(last_params[:10])/2),
                  self.sigmoid(np.average(middle_params[:10]))]
+        # Normalize color to not be gray
         color = np.subtract(color, np.min(color))
         color = np.divide(color, np.max(color) - np.min(color))
-        print(color)
         color = np.multiply(color, 255)
-        # color = np.subtract(color, [126, 63, 126])
-        # print(color)
         return color
 
     '''
@@ -154,7 +152,6 @@ class CellConvSimple(nn.Module):
 Computes the loss of a cell based on the predicted state of the whole grid (color and fitness) vs actual
 '''
 def CA_Loss(y_pred, y):
-    # XXX should be able to use autograd since y_pred was requires_grad
     next_frame_pred = Grid.getColorChannels(y_pred)
     target_frame = Grid.getColorChannels(y)
     fit_preds = Grid.getFitnessChannels(y_pred)
@@ -170,13 +167,9 @@ def CA_Loss(y_pred, y):
 Computes the loss of a cell based on the predicted state of a partial 3x3 grid of neighbors (color and fitness channels) vs actual
 '''
 def partial_CA_Loss(pred, actual, x, y):
-    # next_frame_pred = Grid.getPartialColorChannels(pred, x, y)
     next_frame_pred = pred[:, :, 0:3]
-    # target_frame = Grid.getPartialColorChannels(actual, x, y)
     target_frame = actual[:, :, 0:3]
-    # fit_preds = Grid.getPartialFitnessChannels(pred, x, y)
     fit_preds = pred[:, :, -1]
-    # fit_targets = Grid.getPartialFitnessChannels(actual, x, y)
     fit_targets = actual[:, :, -1]
     with torch.enable_grad():
         frame_loss = F.mse_loss(next_frame_pred, torch.from_numpy(target_frame))

@@ -119,8 +119,6 @@ class CAGame():
         print('cell accessed partial frame at: (' + str(x) + ', ' + str(y) + ')')
         for nx in range(-1, 2):
             for ny in range(-1, 2):
-                # vector_neighbors[nx + 1][ny + 1][:3] = self.grid.data[x + nx, y + ny, :3]
-                # vector_neighbors[nx + 1][ny + 1][3:9] = self.grid.data[x + nx, y + ny, -6:]
                 vector_neighbors[ny + 1][nx + 1][:3] = self.grid.data[y + ny, x + nx, :3]
                 vector_neighbors[ny + 1][nx + 1][3:9] = self.grid.data[y + ny, x + nx, -6:]
         return vector_neighbors
@@ -215,30 +213,15 @@ class CAGame():
                 vector_neighbors[7][ny + 1][nx + 1] = self.grid.data[y + ny, x + nx, -2]
                 vector_neighbors[8][ny + 1][nx + 1] = self.grid.data[y + ny, x + nx, -1]
                 neighbor = self.cell_grid[y + ny][x + nx]
-                # vector_neighbors[0][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 0]
-                # vector_neighbors[1][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 1]
-                # vector_neighbors[2][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, 2]
-                # vector_neighbors[3][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -6]
-                # vector_neighbors[4][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -5]
-                # vector_neighbors[5][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -4]
-                # vector_neighbors[6][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -3]
-                # vector_neighbors[7][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -2]
-                # vector_neighbors[8][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -1]
-                # neighbor = self.cell_grid[x + nx][y + ny]
                 neighbors.append(neighbor)
 
         node.last_neighbors = vector_neighbors
         # After we update the cell, update the previous neighbors to the current grid config
         # Removes the network params from the grid state
-        # TODO change to partial state and get next frame of grid
         # full_state = np.dstack((self.grid.data[:, :, :3], self.grid.data[:, :, -1]))
-
-        # partial_state = vector_neighbors
         # pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
         pred = self.train_module(node, num_epochs=NUM_EPOCHS)
         # todo update cell.fitness property based on loss
-        # self.updateCellGrid(node, x, y)
-
         return pred
 
     ''' 
@@ -248,15 +231,14 @@ class CAGame():
     def train_module(self, cell, full_state=None, prev_state=None, num_epochs=1):
         net = cell.network
 
+        # note, can't run more than one epoch w partial-partial structure
         for epoch in tqdm(range(num_epochs)):
-            # Note: no inner for loop here because only doing one frame pred at a time
-            # for each cell feed neighbors and ask for full grid predictions
             net = net.float()
             input = torch.from_numpy(cell.last_neighbors.astype(np.double))
+            # Adds dimension to input so that it has n, c, w, h format for pytorch
             input = input[None, :, :, :]
             input = input.float().requires_grad_()
             next_pred = net(input)
-            # partial_pred_shape = (3, 3, 4)
             partial_pred_shape = (3, 3, 9)  # 9 channels: 3 color, 5 movement, 1 fitness
             # next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
             next_pred = CellConvSimple.reshape_output(next_pred, partial_pred_shape)
@@ -266,7 +248,6 @@ class CAGame():
             self.moveCell(cell)
             # once movements have all been calculated, give next frame to cell and backprop the loss
             # note probably have to move this backprop stuff to a separate function
-            # other note, don't think we can run more than one epoch because of this structure
 
         # return next_pred, loss.item()
         return next_pred
@@ -287,6 +268,7 @@ class CAGame():
         loss.backward()
         optimizer.step()
         cell.updateColor()
+        # cell.updateFitness()
         return loss.item()
 
     '''
@@ -306,27 +288,6 @@ class CAGame():
                     #     self.GameFlip.get(Nx, Ny).key = 1
                     # else:
                     #     self.GameFlip.get(Nx, Ny).key = 0
-
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    # start/stop
-                    if self.isRunning:
-                        self.isRunning = False
-                    else:
-                        self.isRunning = True
-
-                # XXX do not know what this does
-                # elif event.key == pygame.K_f:
-                #     frame by frame
-                # self.framebyframe = True
-
-                # elif event.key == pygame.K_g:
-                #     toggle grid
-                #     if self.showGrid:
-                #         self.showGrid = False
-
-                # else:
-                #     self.showGrid = True
 
                 elif event.eky == pygame.K_ESCAPE or \
                         event.type == pygame.QUIT:
@@ -418,13 +379,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# dimensions of environment: rgb hashed color / conv net associated with that pixel, fitness
-# Input to agents: neighbor's colors, 
-# get next frame based on which agents move where and which get eaten
-# get loss of each pixel based on predictions and on accuracy of judgment of neighbors' fitness functions
-# update fitness functions as summations of neighbors' predictions and own predictions
-# update frame
-# pygame while loop
-# channels=fitness, rgb of model architecture, environment constraints
-# dimensions: in = (neighborsw x neighborsh x channels), out = (gridw x gridh x channels + movement)
