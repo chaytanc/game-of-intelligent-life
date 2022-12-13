@@ -63,13 +63,14 @@ class CAGame():
         # Grid of Cell objects, corresponding with their vectorized forms stored below for computation
         self.cell_grid: [[Cell]] = [[0] * GRID_W for _ in range(GRID_H)]
         # Has extra dim so multiple cells can occupy the same place in the grid
-        self.intermediate_cell_grid = [[[]] * GRID_W for _ in range(GRID_H)]
+        # self.intermediate_cell_grid = [[[]] * GRID_W for _ in range(GRID_H)]
+        # Want 100, 100, 1
+        self.intermediate_cell_grid = [[[] for col in range(GRID_W)] for row in range(GRID_H)]
         for r in range(GRID_H):
             for c in range(GRID_W):
                 new_cell = Cell(self.network_params_size)
                 new_cell.y = r  # todo changing r and c
                 new_cell.x = c
-                # self.cell_grid[r][c] = new_cell
                 self.cell_grid[r][c] = new_cell
                 self.intermediate_cell_grid[r][c].append(new_cell)
 
@@ -104,9 +105,12 @@ class CAGame():
             next_pos = x, y + 1
         else:  # 0
             next_pos = x, y
+
         self.intermediate_cell_grid[next_pos[1]][next_pos[0]].append(cell)
+        # Make cell be empty if it moved
         if x != next_pos[1] and y != next_pos[0]:
-            self.intermediate_cell_grid[next_pos[1]][next_pos[0]] = []
+            cell = Cell(network_param_size=self.network_params_size)
+            self.intermediate_cell_grid[y][x] = [cell]
 
     def getPartialFrame(self, cell, frame_size=(3, 3)):  # will break if cells are on the border
         vector_neighbors = np.zeros(shape=(frame_size[0], frame_size[1], 9))
@@ -169,15 +173,15 @@ class CAGame():
     def resolveIntermediateCellGrid(self):
         for y, row in enumerate(self.intermediate_cell_grid):
             for x, cell in enumerate(row):
+                # try:
                 if len(cell) > 1:
                     self.eatCells(x, y)
                 else:
                     # Remove cells that moved away if intermediate cell grid is black and cell grid is not
-                    if self.cell_grid[y][x].network and not cell[0]:
-                        cell_net = CellConvSimple().to(device)
-                        self.cell_grid[y][x] = Cell(color=[0, 0, 0], network_param_size=self.network_params_size,
-                                                    network=cell_net, fitness=10)
-                        self.grid[y][x] = self.empty_vector
+                    if self.cell_grid[y][x].network and not cell[0].network:
+                        self.cell_grid[y][x] = Cell(self.network_params_size)
+                        self.grid.data[y][x] = self.empty_vector
+
                     self.updateCellGrid(cell[0], x, y)
 
     # If cells move on top of each other, check how to break ties / which gets eaten and which replicates
@@ -356,11 +360,11 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        iterations = 5
+        iterations = 100
         i = 0
-        losses = []
         self.testCellConv()
         while i < iterations:
+        # while True:
             CLOCK.tick(70)  # Makes game run at 70 fps or slower
             for row in self.cell_grid:
                 for cell in row:
@@ -372,7 +376,7 @@ class CAGame():
                 for j, cell in enumerate(row):
                     cell.x = j  # x is col
                     cell.y = i  # y is row
-                    print('iteration: (', j, ', ', i, ')')
+                    # print('iteration: (', j, ', ', i, ')')
                     if cell.network:
                         print('cell backprop called at: (', cell.x, ', ', cell.y, ')')
                         print('iteration called at: (', j, ', ', i, ')')
@@ -380,22 +384,28 @@ class CAGame():
                         cell.losses.append(loss)
 
             # Clear intermediate cell grid for next iteration
-            self.intermediate_cell_grid = [[[]] * GRID_W for _ in range(GRID_H)]
+            # self.intermediate_cell_grid = [[ ['#' for col in range(2)] for col in range(GRID_W)] for row in range(GRID_H)]
+            self.intermediate_cell_grid = [[ [] for col in range(GRID_W)] for row in range(GRID_H)]
+            for r in range(GRID_H):
+                for c in range(GRID_W):
+                    self.intermediate_cell_grid[r][c].append(self.cell_grid[r][c])
 
             self.draw()
             self.eventHandler()
             pygame.display.flip()
             i += 1
 
+        count = 0
         for i, row in enumerate(self.cell_grid):
             for j, cell in enumerate(row):
-                if i == 5 and j == 4:  # arbitrary
+                if cell.network and count < 5:  # arbitrary cell index
                     print(cell.losses)
-                    plt.title('Loss vs. Iteration for cell (' + str(i) + ', ' + str(j) + ')')
+                    plt.title('Loss vs. Epoch for cell (' + str(j) + ', ' + str(i) + ')')
                     plt.xlim((0, 100))
                     plt.plot(np.arange(len(cell.losses)), cell.losses, 'g-', label="means")
                     plt.legend(loc="upper right")
                     plt.show()
+                    count += 1
 
 
 def main():

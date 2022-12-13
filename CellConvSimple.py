@@ -131,9 +131,10 @@ class CellConvSimple(nn.Module):
         middle_params = self.layer1.parameters().__next__().detach().numpy()
         last_params = self.layer3.parameters().__next__().detach().numpy()
         color = [self.sigmoid(np.average(first_params[:5])),
-                 self.sigmoid(np.average(last_params[:5])),
+                 self.sigmoid(np.average(last_params[:5])) / 2,
                  self.sigmoid(np.average(middle_params[:5]))]
         color = np.array(color) * 256
+        color = np.subtract(color, [126, 63, 126]) ** 3
         return color
 
     '''
