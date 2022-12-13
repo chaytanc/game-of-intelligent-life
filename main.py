@@ -100,6 +100,22 @@ class CAGame():
             next_pos = x, y
         self.intermediate_cell_grid[next_pos[0]][next_pos[1]].append(cell)
 
+    def getPartialFrame(self, cell, frame_size=(3, 3)):
+        vector_neighbors = np.zeros(shape=(frame_size[0], frame_size[1], 9))
+        x = cell.x
+        y = cell.y
+        for nx in range(-1, 2):
+            for ny in range(-1, 2):
+                vector_neighbors[nx + 1][ny + 1][:3] = self.grid.data[x + nx, y + ny, :3]
+                vector_neighbors[nx + 1][ny + 1][3:9] = self.grid.data[x + nx, y + ny, -6:]
+        return vector_neighbors
+
+    def getFullFrame(self):
+        vector_neighbors = np.zeros(shape=(3, 3, 9))
+        vector_neighbors[:, :, 3] = self.grid.data[:, :, :3]
+        vector_neighbors[:, :, 3:9] = self.grid.data[:, :, -6:]
+        return vector_neighbors
+
 
     def testCellConv(self):
         # cell_net = CellConv(ResidualBlock, [3, 4, 6, 3], observability=OBSERVABILITY).to(device)
@@ -160,6 +176,7 @@ class CAGame():
     def updateCell(self, node: Cell, previous_grid=None):
         vector_neighbors = np.zeros(shape=(4, 3, 3))
         neighbors = []
+        neighbor_pos = []
         x = node.x
         y = node.y
         # Get cell's neighbors, 3x3
@@ -174,6 +191,7 @@ class CAGame():
                 vector_neighbors[3][nx + 1][ny + 1] = self.grid.data[x + nx, y + ny, -1]
                 neighbor = self.cell_grid[x + nx][y + ny]
                 neighbors.append(neighbor)
+                neighbor_pos.append((x + nx, y + ny))
                 # vector_neighbors.append(vector_row)
                 # else:
                 #     neighbors.append()
@@ -186,7 +204,7 @@ class CAGame():
 
         # partial_state = vector_neighbors
         # pred, loss = CellConv.train_module(node, full_state=full_state, prev_state=previous_grid, num_epochs=NUM_EPOCHS)
-        pred, loss = CellConvSimple.train_module(node, full_state=full_state, num_epochs=NUM_EPOCHS)
+        pred, loss = self.train_module(node, full_state=full_state, num_epochs=NUM_EPOCHS)
         # todo update cell.fitness property based on loss
         self.updateCellGrid(node, x, y)
 
@@ -324,6 +342,7 @@ class CAGame():
                     if cell.network:
                         loss = self.updateCell(cell)
                         if p:
+                            # plot the loss of the first cell (0, 0)
                             losses.append(loss)
                             p = False
 
@@ -332,7 +351,7 @@ class CAGame():
             pygame.display.flip()
             i += 1
         print(losses)
-        plt.title('Loss')
+        plt.title('Loss vs. Iteration')
         plt.xlim((0, 100))
         plt.plot(np.arange(len(losses)), losses, 'g-', label="means")
         plt.legend(loc="upper right")
