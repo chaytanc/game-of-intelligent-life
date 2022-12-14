@@ -21,6 +21,11 @@ GRID_H = 100  # cells
 FIT_CHANNELS = 1
 MOVE_CHANNELS = 5
 NUM_EPOCHS = 1
+# Hyperparams
+LEARNING_RATE = 0.01
+WEIGHT_DECAY = 0.001
+MOMENTUM = 0.97
+RANDOM_MOVE_CHANCE = 0.1
 # FREEZE = True
 FREEZE = False
 CLOCK = pygame.time.Clock()
@@ -128,7 +133,7 @@ class CAGame():
         vector_neighbors = np.zeros(shape=(frame_size[0], frame_size[1], 9))
         x = cell.x
         y = cell.y
-        print('cell accessed partial frame at: (' + str(x) + ', ' + str(y) + ')')
+        # print('cell accessed partial frame at: (' + str(x) + ', ' + str(y) + ')')
         for nx in range(-1, 2):
             for ny in range(-1, 2):
                 if x + nx >= GRID_W or y + ny >= GRID_H:
@@ -154,7 +159,7 @@ class CAGame():
         xs = np.random.choice(x_locations, num_cells, replace=True)
         ys = np.random.choice(y_locations, num_cells, replace=True)
         xy = np.squeeze(np.dstack((xs, ys)))
-        # nothing, left, right, up, down
+        # nothing, left, right, up, downX
         directions = [0, 1, 2, 3, 4]
         # Add initial cells to the grid objects
         for i in range(0, num_cells):
@@ -189,7 +194,7 @@ class CAGame():
         # for y, row in enumerate(self.cell_grid):
         #     for x, cell in enumerate(row):
         if cell.network:
-            movement_vector = Cell.getMovement(cell.x, cell.y, self.grid)
+            movement_vector = Cell.getMovement(cell.x, cell.y, self.grid, p=RANDOM_MOVE_CHANCE)
             if FREEZE:
                 cell.move = [1, 0, 0, 0, 0]
             else:
@@ -288,14 +293,12 @@ class CAGame():
         return next_pred
 
     def cellBackprop(self, cell):
-        # TODO hyperparam tuning
-        learning_rate = 0.05
         net = cell.network
         optimizer = torch.optim.SGD(
             net.parameters(),
-            lr=learning_rate,
-            weight_decay=0.001,  # TODO Check weight decay params
-            momentum=0.9)
+            lr=LEARNING_RATE,
+            weight_decay=WEIGHT_DECAY,  # TODO Check weight decay params
+            momentum=MOMENTUM)
         next_frame = self.getPartialFrame(cell)  # default numpy (3, 3, 9)
         loss = partial_CA_Loss(cell.pred, next_frame, cell.x, cell.y)
         # print('pred: ', next_full_state_pred)
@@ -362,10 +365,10 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        iterations = 200
+        iterations = 30
         pbar = tqdm(total=iterations)
         itr = 0
-        self.testCellConv(num_cells=500)
+        self.testCellConv(num_cells=750)
         running = True
         while running:
             print("iteration", itr)
@@ -383,8 +386,8 @@ class CAGame():
                     cell.x = j  # x is col
                     cell.y = i  # y is row
                     if cell.network:
-                        print('cell backprop called at: (', cell.x, ', ', cell.y, ')')
-                        print('iteration called at: (', j, ', ', i, ')')
+                        # print('cell backprop called at: (', cell.x, ', ', cell.y, ')')
+                        # print('iteration called at: (', j, ', ', i, ')')
                         loss = self.cellBackprop(cell)
                         cell.losses.append(loss)
             self.checkIntermediateEmpty()
@@ -400,17 +403,24 @@ class CAGame():
         pbar.close()
 
         count = 0
+        final_cell_losses = []
+        cellcount = 0
         for i, row in enumerate(self.cell_grid):
             for j, cell in enumerate(row):
-                if cell.network and count < 5:  # arbitrary cell index
-                    plt.title('Loss vs. Epoch for cell (' + str(j) + ', ' + str(i) + ')')
-                    plt.ylabel('Loss')
-                    plt.xlabel('Epoch')
-                    # plt.xlim((0, 100))
-                    plt.plot(np.arange(len(cell.losses)), cell.losses, 'g-', label="means")
-                    plt.legend(loc="upper right")
-                    plt.show()
-                    count += 1
+                if cell.network:
+                    cellcount += 1
+                    final_cell_losses.append(cell.losses[-1])
+                    if count < 15:  # plot [#] number of cells
+                        plt.title('Loss vs. Epoch for cell (' + str(j) + ', ' + str(i) + ')')
+                        plt.ylabel('Loss')
+                        plt.xlabel('Epoch')
+                        # plt.xlim((0, 100))
+                        plt.plot(np.arange(len(cell.losses)), cell.losses, 'g-')
+                        # plt.legend(loc="upper right")
+                        plt.show()
+                        count += 1
+        print('cellcount ', cellcount)
+        print('avg. cell loss:', np.sum(final_cell_losses) / len(final_cell_losses))
 
     def checkRep(self):
         if DEBUG:

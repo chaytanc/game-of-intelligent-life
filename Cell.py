@@ -63,11 +63,11 @@ class Cell():
     # Five channels before fitness are for movement
     # Higher t, more chance of random movement
     @staticmethod
-    def getMovement(x, y, grid, t=0.1):
+    def getMovement(x, y, grid, p=0.1):
         # nothing, left, right, up, down
         valid_directions = [0, 1, 2, 3, 4]
         # Non random movement
-        if np.random.uniform(0, 1) > t:
+        if np.random.uniform(0, 1) > p:
             movement_vector = grid.data[y, x][-6:-1]
             movement = np.argmax(movement_vector)
             movement_vector = [0, 0, 0, 0, 0]
