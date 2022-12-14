@@ -156,9 +156,9 @@ class CAGame():
         xy = np.squeeze(np.dstack((xs, ys)))
         # nothing, left, right, up, down
         directions = [0, 1, 2, 3, 4]
-        valid_directions = directions
         # Add initial cells to the grid objects
         for i in range(0, num_cells):
+            valid_directions = directions.copy()
             cell_net = CellConvSimple().to(device)
             cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
             x, y = xy[i]
@@ -362,10 +362,10 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        iterations = 20
+        iterations = 200
         pbar = tqdm(total=iterations)
         itr = 0
-        self.testCellConv(num_cells=30)
+        self.testCellConv(num_cells=500)
         running = True
         while running:
             print("iteration", itr)
