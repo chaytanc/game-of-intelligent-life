@@ -20,3 +20,5 @@ The grid then updates the display based on the movement vectors outputted by cel
 This completes one iteration of the game.  It continues until you're bored??  
 
 Cells that move on top of each other break ties with the fitter cell eating the less fit cell.  
+
+[More info](https://chaytanc.github.io/gil)

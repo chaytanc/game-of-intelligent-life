@@ -61,36 +61,39 @@ class Cell():
         return grid.data[x, y][-2:-1]
 
     # Five channels before fitness are for movement
+    # Higher t, more chance of random movement
     @staticmethod
-    def getMovement(x, y, grid, t=0.5):
+    def getMovement(x, y, grid, t=0.1):
         # nothing, left, right, up, down
         valid_directions = [0, 1, 2, 3, 4]
-        if np.random.uniform(0, 1) < t:
+        # Non random movement
+        if np.random.uniform(0, 1) > t:
             movement_vector = grid.data[y, x][-6:-1]
             movement = np.argmax(movement_vector)
             movement_vector = [0, 0, 0, 0, 0]
             movement_vector[movement] = 1
+        # Random movement
         else:
             movement_vector = [0, 0, 0, 0, 0]
             movement = np.random.choice(5)
             movement_vector[movement] = 1
 
-        if x <= 1 and movement == 1:
+        if x <= 1 and movement == 1:  # Left
             valid_directions.remove(1)
             movement = np.random.choice(valid_directions)
             movement_vector[1] = 0
             movement_vector[movement] = 1
-        if x >= 98 and movement == 2:
+        if x >= 98 and movement == 2:  # Right
             valid_directions.remove(2)
             movement = np.random.choice(valid_directions)
             movement_vector[2] = 0
             movement_vector[movement] = 1
-        if y <= 1 and movement == 3:
+        if y <= 1 and movement == 3:  # Up
             valid_directions.remove(3)
             movement = np.random.choice(valid_directions)
             movement_vector[3] = 0
             movement_vector[movement] = 1
-        if y >= 98 and movement == 4:
+        if y >= 98 and movement == 4:  # Down
             valid_directions.remove(4)
             movement = np.random.choice(valid_directions)
             movement_vector[4] = 0
@@ -107,3 +110,8 @@ class Cell():
 
     def __repr__(self):
         return str(self.color)
+
+    def __eq__(self, other):
+        if type(other) == type(self):
+            return np.allclose(self.color, other.color)
+        return False

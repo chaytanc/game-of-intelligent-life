@@ -1,7 +1,6 @@
 import numpy as np
 from torch import nn
 import torch
-from tqdm import tqdm
 import torch.nn.functional as F
 from Grid import Grid
 import math
