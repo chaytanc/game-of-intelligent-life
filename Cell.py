@@ -9,11 +9,11 @@ explicitly embodied or modeled
 
 class Cell():
 
-    def __init__(self, network_param_size, channel_dim=5, color=(0, 0, 0), network=None, fitness=-1):
+    def __init__(self, network_param_size, device='mps', color=(0, 0, 0), network=None, fitness=-1):
         self.color = np.array(color)
         self.network = network
         if network:
-            self.network_vec = network.getNetworkParamVector()
+            self.network_vec = network.getNetworkParamVector(device)
             self.color = network.getNetworkColor()
         else:
             self.network_vec = np.zeros(network_param_size)
