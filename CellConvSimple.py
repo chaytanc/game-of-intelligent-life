@@ -74,12 +74,12 @@ class CellConvSimple(nn.Module):
     '''
     Represent the first and last layers of the network as flattened numpy arrays of those parameters, concatenated
     '''
-    def getNetworkParamVector(self):
+    def getNetworkParamVector(self, device):
         first_params = self.layer0.parameters().__next__().detach()
         last_params = self.layer3.parameters().__next__().detach()
-        first, last = CellConvSimple.firstLastParams(first_params, last_params)
-        first = first.detach().numpy().flatten()
-        last = last.detach().numpy().flatten()
+        first, last = CellConvSimple.firstLastParams(device, first_params, last_params)
+        first = first.cpu().detach().numpy().flatten()
+        last = last.cpu().detach().numpy().flatten()
         network_param_vector = np.concatenate([first, last])
         return network_param_vector
 
@@ -95,7 +95,7 @@ class CellConvSimple(nn.Module):
     1-d convolutions, then simply truncating if that does not work... may need to choose one strat or the other
     '''
     @staticmethod
-    def firstLastParams(*args):
+    def firstLastParams(device='mps', *args):
         layers_params = []
         for layer_params in args:
             size = CellConvSimple.getParams(layer_params)
@@ -110,8 +110,8 @@ class CellConvSimple(nn.Module):
                         dim0 = layer_params.shape[0] // 2
                         layer_params = layer_params[:dim0, :layer_params.shape[1],
                                        :layer_params.shape[2], :layer_params.shape[3]]
-                conv = torch.nn.Conv2d(in_channels=layer_params.shape[1], out_channels=out, kernel_size=1)
-                layer_params = conv(layer_params)
+                conv = torch.nn.Conv2d(in_channels=layer_params.shape[1], out_channels=out, kernel_size=1).to(device)
+                layer_params = conv(layer_params.to(device))
                 size = CellConvSimple.getParams(layer_params)
                 last_out = out
 
@@ -126,9 +126,9 @@ class CellConvSimple(nn.Module):
     def getNetworkColor(self):
         # Note: only using first 5 weights
         # sum of first layer weights, sum of last layer weights, sum of middle layer weights
-        first_params = self.layer0.parameters().__next__().detach().numpy()
-        middle_params = self.layer1.parameters().__next__().detach().numpy()
-        last_params = self.layer3.parameters().__next__().detach().numpy()
+        first_params = self.layer0.parameters().__next__().cpu().detach().numpy()
+        middle_params = self.layer1.parameters().__next__().cpu().detach().numpy()
+        last_params = self.layer3.parameters().__next__().cpu().detach().numpy()
         color = [self.sigmoid(np.average(first_params[:10])),
                  self.sigmoid(np.average(last_params[:10])/2),
                  self.sigmoid(np.average(middle_params[:10]))]

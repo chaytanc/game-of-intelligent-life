@@ -29,7 +29,9 @@ RANDOM_MOVE_CHANCE = 0.1
 # FREEZE = True
 FREEZE = False
 CLOCK = pygame.time.Clock()
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+print("Device", device)
 
 '''Sets up the size constant of the channels that each cell in the grid will hold. We will have 3 for color, 
 some amount for representing the parameters of the conv net at that location, and some to represent the fitness of 
@@ -38,8 +40,8 @@ the cell. '''
 
 # TODO Biochemical signaling channels? movement channel
 def setChannels(first_params, last_params):
-    network_params_size = ((first_params.detach().numpy().flatten().size +
-                            last_params.detach().numpy().flatten().size))
+    network_params_size = ((first_params.cpu().detach().numpy().flatten().size +
+                            last_params.cpu().detach().numpy().flatten().size))
     # 3 channels for rgb, + network params size + fitness channels
     CHANNELS = 3 + network_params_size + MOVE_CHANNELS + FIT_CHANNELS
     return CHANNELS
@@ -58,9 +60,9 @@ class CAGame():
         first_params = cell_net.layer0.parameters().__next__().detach()
         last_params = cell_net.layer3.parameters().__next__().detach()
         # first_params, last_params = CellConv.firstLastParams(first_params, last_params)
-        first_params, last_params = CellConvSimple.firstLastParams(first_params, last_params)
-        self.network_params_size = ((first_params.detach().numpy().flatten().size +
-                                     last_params.detach().numpy().flatten().size))
+        first_params, last_params = CellConvSimple.firstLastParams(device, first_params, last_params)
+        self.network_params_size = ((first_params.cpu().detach().numpy().flatten().size +
+                                     last_params.cpu().detach().numpy().flatten().size))
         CHANNELS = setChannels(first_params, last_params)
         OUTPUT_SHAPE = (GRID_H, GRID_W, CHANNELS)
         cell_net.output_shape = OUTPUT_SHAPE
@@ -75,7 +77,7 @@ class CAGame():
         self.intermediate_cell_grid = [[[] for col in range(GRID_W)] for row in range(GRID_H)]
         for r in range(GRID_H):
             for c in range(GRID_W):
-                new_cell = Cell(self.network_params_size)
+                new_cell = Cell(self.network_params_size, device)
                 new_cell.y = r
                 new_cell.x = c
                 self.cell_grid[r][c] = new_cell
@@ -83,7 +85,8 @@ class CAGame():
         self.checkRep()
 
         # Grid, holding vectorized cells in data used to actually get loss of cells
-        self.grid = Grid(CELL_SIZE, grid_size=(GRID_W, GRID_H, CHANNELS), network_params_size=self.network_params_size)
+        self.grid = Grid(CELL_SIZE, grid_size=(GRID_W, GRID_H, CHANNELS),
+                         network_params_size=self.network_params_size, device=device)
         self.screen = pygame.display.set_mode(self.grid.res)
         self.empty_vector = np.zeros((CHANNELS))
         pygame.display.set_caption("Cellular Automata", "CA")
@@ -125,7 +128,7 @@ class CAGame():
         self.checkIntermediateEmpty()
         # Make intermediate cell at x, y be empty if cell moved away
         if y != ny or x != nx:
-            cell = Cell(network_param_size=self.network_params_size)
+            cell = Cell(network_param_size=self.network_params_size, device=device)
             self.intermediate_cell_grid[y][x] = [cell]
         self.checkIntermediateEmpty()
 
@@ -159,15 +162,18 @@ class CAGame():
         xs = np.random.choice(x_locations, num_cells, replace=True)
         ys = np.random.choice(y_locations, num_cells, replace=True)
         xy = np.squeeze(np.dstack((xs, ys)))
-        # nothing, left, right, up, downX
+        # nothing, left, right, up, down
         directions = [0, 1, 2, 3, 4]
+        print("\nGenerating {} cells!".format(num_cells))
+
         # Add initial cells to the grid objects
-        for i in range(0, num_cells):
+        for i in (range(0, num_cells)):
             valid_directions = directions.copy()
             cell_net = CellConvSimple().to(device)
-            cell = Cell(color=color, network_param_size=self.network_params_size, network=cell_net, fitness=10)
+            cell = Cell(color=color, network_param_size=self.network_params_size,
+                        network=cell_net, fitness=10, device=device)
             x, y = xy[i]
-            print('generated cell at: (' + str(x) + ', ' + str(y) + ')')
+            # print('generated cell at: (' + str(x) + ', ' + str(y) + ')')
             if x == 98:
                 valid_directions.remove(2)
             if x == 1:
@@ -180,11 +186,13 @@ class CAGame():
             if not FREEZE:
                 direction = np.random.choice(valid_directions)
                 cell.move[direction] = 1
-            # Put the generated cell into the intermediate cell grid
-            # self.moveCellsInIntermediateCellGrid(cell, x, y)
+            if i == num_cells // 2:
+                print("Halfway done!")
+            # Put the generated cell into the cell grid
             self.updateCellGrid(cell, x, y)
             self.refreshIntermediateCellGrid()
             self.checkRep()
+        print("Generated {} cells".format(num_cells))
 
 
     # Loop through each cell, get movement, update intermediate cell grid
@@ -205,12 +213,11 @@ class CAGame():
     def resolveIntermediateCellGrid(self):
         for y, row in enumerate(self.intermediate_cell_grid):
             for x, cell in enumerate(row):
-                #Todo probably uncomment this
                 # Remove cells that moved away if intermediate cell grid is black and cell grid is not
                 if cell[0].color.all() == 0 and (not self.cell_grid[y][x].color.all() == 0):
-                    self.cell_grid[y][x] = Cell(self.network_params_size)
+                    self.cell_grid[y][x] = Cell(self.network_params_size, device)
                     self.grid.data[y][x] = self.empty_vector
-                if len(cell) > 1: #TODO check how often this branch is called... should be never if we start w one cell
+                if len(cell) > 1:
                     dominant_cell = self.eatCells(x, y)
                     self.updateCellGrid(dominant_cell, x, y)
                 else:
@@ -269,12 +276,13 @@ class CAGame():
         net = cell.network
 
         # note, can't run more than one epoch w partial-partial structure
-        for epoch in tqdm(range(num_epochs)):
+        for epoch in (range(num_epochs)):
             net = net.float()
             input = torch.from_numpy(cell.last_neighbors.astype(np.double))
             # Adds dimension to input so that it has n, c, w, h format for pytorch
             input = input[None, :, :, :]
             input = input.float().requires_grad_()
+            input = input.to(device)
             next_pred = net(input)
             partial_pred_shape = (3, 3, 9)  # 9 channels: 3 color, 5 movement, 1 fitness
             # next_full_state_pred = CellConvSimple.reshape_output(next_full_state_pred, full_state.shape)
@@ -300,7 +308,7 @@ class CAGame():
             weight_decay=WEIGHT_DECAY,  # TODO Check weight decay params
             momentum=MOMENTUM)
         next_frame = self.getPartialFrame(cell)  # default numpy (3, 3, 9)
-        loss = partial_CA_Loss(cell.pred, next_frame, cell.x, cell.y)
+        loss = partial_CA_Loss(cell.pred.cpu(), next_frame, cell.x, cell.y)
         # print('pred: ', next_full_state_pred)
         optimizer.zero_grad()
         loss.backward()
@@ -365,10 +373,10 @@ class CAGame():
                              (GRID_W * self.grid.cell_size, row * self.grid.cell_size))
 
     def startGame(self):
-        iterations = 30
+        iterations = 100
         pbar = tqdm(total=iterations)
         itr = 0
-        self.testCellConv(num_cells=750)
+        self.testCellConv(num_cells=50)
         running = True
         while running:
             print("iteration", itr)
@@ -434,7 +442,7 @@ class CAGame():
     def checkIntermediateEmpty(self):
         if DEBUG:
             all_empty = True
-            empty_cell = Cell(self.network_params_size)
+            empty_cell = Cell(self.network_params_size, device)
             for y, row in enumerate(self.intermediate_cell_grid):
                 for x, col in enumerate(row):
                     # if col[0] != empty_cell:
